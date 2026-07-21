@@ -6,6 +6,24 @@ import path from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
+// Shared exec options for git commands that could hang (block the project lock
+// forever) or produce large output (default 1MB maxBuffer would reject). A
+// stuck git is killed after the timeout so the lock's finally can release.
+// LC_ALL=C forces stable English git output so parsing (e.g. 'Fast-forward'
+// detection) doesn't break under a localized LANG/LC_MESSAGES.
+const GIT_EXEC_OPTS = {
+  timeout: 120_000,
+  killSignal: 'SIGKILL',
+  maxBuffer: 64 * 1024 * 1024,
+  env: { ...process.env, LC_ALL: 'C' },
+};
+
+/** True if an execFile error was a maxBuffer overflow (not a git failure). */
+function isMaxBufferError(err) {
+  return err && (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+    || /maxBuffer/i.test(err.message || ''));
+}
+
 // Per-project mutex map for worktree operations
 const projectLocks = new Map();
 
@@ -460,6 +478,141 @@ export async function isWorktreeDirty(projectDir, branchName) {
       `Cannot check dirty status: ${err.stderr || err.message}`,
       code
     );
+  }
+}
+
+/**
+ * Merge a session's branch into the project's currently checked-out branch so
+ * the user can run the changes from the project root ("local").
+ *
+ * Behavior (per product decision):
+ *  - If the session worktree has uncommitted changes, auto-commit them on the
+ *    session branch first (nothing is lost).
+ *  - Merge with fast-forward when possible, otherwise create a merge commit.
+ *  - The project root must have a clean working tree (we won't merge over
+ *    uncommitted local edits). Conflicts abort the merge and surface an error.
+ *
+ * @param {string} projectDir - Project root directory
+ * @param {string} branchName - Sanitized branch name (without claude/ prefix)
+ * @param {string} projectId - Project ID for the mutex
+ * @returns {Promise<{merged: boolean, fastForward: boolean, committed: boolean, branch: string}>}
+ * @throws {Error} with .code for known failure modes
+ */
+export async function mergeSessionToMain(projectDir, branchName, projectId) {
+  const fullBranch = `claude/${branchName}`;
+  const worktreePath = path.join(projectDir, '.worktrees', branchName);
+
+  const fail = (message, code) => {
+    const e = new Error(message);
+    e.code = code;
+    return e;
+  };
+
+  const release = await acquireProjectLock(projectId);
+  try {
+    // Session worktree must exist.
+    if (!(await worktreeExists(projectDir, branchName))) {
+      throw fail('Session worktree no longer exists.', 'WORKTREE_MISSING');
+    }
+
+    // Project root must be clean — refuse to merge over uncommitted local edits.
+    // Ignore the .worktrees/ directory itself, which shows as untracked when it
+    // isn't gitignored and must not count as "dirty" for this purpose.
+    try {
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: projectDir, ...GIT_EXEC_OPTS });
+      const dirtyLines = stdout
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .filter((l) => {
+          const p = l.slice(3); // strip the 2-char status + space
+          return p !== '.worktrees' && !p.startsWith('.worktrees/');
+        });
+      if (dirtyLines.length > 0) {
+        throw fail('Project has uncommitted changes. Commit or stash them before merging.', 'MAIN_DIRTY');
+      }
+    } catch (e) {
+      if (e.code === 'MAIN_DIRTY') throw e;
+      throw fail(`Cannot read project git status: ${e.stderr || e.message}`, 'GIT_ERROR');
+    }
+
+    // Don't merge a branch into itself (project root checked out on the session branch).
+    let currentBranch = '';
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectDir, ...GIT_EXEC_OPTS });
+      currentBranch = stdout.trim();
+    } catch (e) {
+      throw fail(`Cannot determine current branch: ${e.stderr || e.message}`, 'GIT_ERROR');
+    }
+    if (currentBranch === fullBranch) {
+      throw fail(`Project root is already on ${fullBranch}; nothing to merge.`, 'SAME_BRANCH');
+    }
+
+    // Auto-commit any uncommitted work in the session worktree first.
+    // --no-verify skips hooks that could hang the lock; the commit is internal.
+    let committed = false;
+    try {
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: worktreePath, ...GIT_EXEC_OPTS });
+      if (stdout.trim().length > 0) {
+        await execFileAsync('git', ['add', '-A'], { cwd: worktreePath, ...GIT_EXEC_OPTS });
+        await execFileAsync(
+          'git',
+          ['commit', '--no-verify', '-m', `WIP: ${branchName} (auto-committed before merge)`],
+          { cwd: worktreePath, ...GIT_EXEC_OPTS }
+        );
+        committed = true;
+      }
+    } catch (e) {
+      // The session's Claude is still running in this worktree; a concurrent git
+      // op holds index.lock. Surface as a distinct, retriable condition.
+      const detail = `${e.stderr || ''} ${e.message || ''}`;
+      if (/index\.lock|Unable to create.*index|another git process/i.test(detail)) {
+        throw fail('The session is busy writing to this worktree. Try the merge again in a moment.', 'SESSION_BUSY');
+      }
+      throw fail(`Failed to auto-commit session changes: ${e.stderr || e.message}`, 'COMMIT_FAILED');
+    }
+
+    // Merge the session branch into the project's current branch (ff when possible).
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['merge', '--ff', fullBranch],
+        { cwd: projectDir, ...GIT_EXEC_OPTS }
+      );
+      const fastForward = /Fast-forward/i.test(stdout);
+      return { merged: true, fastForward, committed, branch: fullBranch };
+    } catch (e) {
+      // A maxBuffer overflow means the merge likely SUCCEEDED but produced huge
+      // output — don't misreport it as a conflict or blindly abort a completed
+      // merge. But if git was killed mid-merge (repo left MERGING), abort so we
+      // don't strand the working tree. Detect via MERGE_HEAD.
+      if (isMaxBufferError(e)) {
+        try {
+          await execFileAsync('git', ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], { cwd: projectDir, ...GIT_EXEC_OPTS });
+          // MERGE_HEAD exists → mid-merge → abort to leave a clean tree.
+          try {
+            await execFileAsync('git', ['merge', '--abort'], { cwd: projectDir, ...GIT_EXEC_OPTS });
+          } catch { /* best-effort */ }
+        } catch {
+          // No MERGE_HEAD → merge already completed; nothing to abort.
+        }
+        throw fail(
+          'Merge produced too much output to capture; verify with `git status` / `git log`.',
+          'MERGE_OUTPUT_OVERFLOW'
+        );
+      }
+      // Merge failed (most likely conflicts) — abort so the tree is left clean.
+      try {
+        await execFileAsync('git', ['merge', '--abort'], { cwd: projectDir, ...GIT_EXEC_OPTS });
+      } catch {
+        // ignore abort failure
+      }
+      throw fail(
+        `Merge failed (likely conflicts) and was aborted. Resolve manually: git merge ${fullBranch}`,
+        'MERGE_CONFLICT'
+      );
+    }
+  } finally {
+    release();
   }
 }
 

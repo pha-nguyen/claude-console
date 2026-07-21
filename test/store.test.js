@@ -164,6 +164,43 @@ describe('Store: session CRUD', () => {
     assert.strictEqual(store.updateSession('nonexistent', { status: 'exited' }), undefined);
   });
 
+  it('updateSession persists name, branchName, and worktreePath (no silent drop)', () => {
+    const store = storeWithProject();
+    store.createSession({
+      id: 's1', projectId: 'p1', name: 'old', branchName: 'b-old',
+      worktreePath: '.worktrees/b-old', claudeSessionId: null,
+      status: 'running', createdAt: '2026-02-06T00:00:00.000Z',
+    });
+    const updated = store.updateSession('s1', {
+      name: 'new', branchName: 'b-new', worktreePath: '.worktrees/b-new',
+    });
+    assert.strictEqual(updated.name, 'new');
+    assert.strictEqual(updated.branchName, 'b-new');
+    assert.strictEqual(updated.worktreePath, '.worktrees/b-new');
+    // Untouched fields preserved
+    assert.strictEqual(updated.status, 'running');
+    const reread = store.getSession('s1');
+    assert.strictEqual(reread.name, 'new');
+    assert.strictEqual(reread.worktreePath, '.worktrees/b-new');
+  });
+
+  it('updateSession preserves omitted fields but clears on explicit null', () => {
+    const store = storeWithProject();
+    store.createSession({
+      id: 's1', projectId: 'p1', name: 'sess', branchName: 'b1',
+      worktreePath: '.worktrees/b1', claudeSessionId: 'cid-1',
+      status: 'running', createdAt: '2026-02-06T00:00:00.000Z',
+    });
+    // Omitted fields keep their values; only status changes.
+    let u = store.updateSession('s1', { status: 'exited' });
+    assert.strictEqual(u.branchName, 'b1');
+    assert.strictEqual(u.claudeSessionId, 'cid-1');
+    // Explicit null clears.
+    u = store.updateSession('s1', { claudeSessionId: null });
+    assert.strictEqual(u.claudeSessionId, null);
+    assert.strictEqual(u.branchName, 'b1');
+  });
+
   it('deleteSession removes session', () => {
     const store = storeWithProject();
     store.createSession({

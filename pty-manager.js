@@ -8,11 +8,14 @@ const MAX_BUFFER = 1024 * 1024; // 1MB
  * Build the command and arguments for spawning a Claude CLI or shell process.
  * Exported for testing.
  */
-export function buildSpawnCommand({ resumeId, shell, args }) {
+export function buildSpawnCommand({ resumeId, fork, shell, args }) {
   if (shell) {
     return { command: shell, cmdArgs: args || [] };
   }
   const cmdArgs = resumeId ? ['--resume', resumeId] : [];
+  // --fork-session branches a copy so we can resume a conversation that is
+  // already running elsewhere (Claude refuses a plain --resume in that case).
+  if (resumeId && fork) cmdArgs.push('--fork-session');
   cmdArgs.push('--dangerously-skip-permissions');
   return { command: 'claude', cmdArgs };
 }
@@ -81,12 +84,12 @@ export class PtyManager {
     this.shellProcesses = new Map();
   }
 
-  spawn(sessionId, { cwd, resumeId, cols = 80, rows = 24, shell, args }) {
+  spawn(sessionId, { cwd, resumeId, fork, cols = 80, rows = 24, shell, args }) {
     if (this.processes.has(sessionId)) {
       throw new Error(`Session ${sessionId} already exists`);
     }
 
-    const { command, cmdArgs } = buildSpawnCommand({ resumeId, shell, args });
+    const { command, cmdArgs } = buildSpawnCommand({ resumeId, fork, shell, args });
 
     const ptyProcess = pty.spawn(command, cmdArgs, {
       name: 'xterm-256color',
@@ -181,6 +184,14 @@ export class PtyManager {
 
     const proc = new PtyProcess(ptyProcess);
     this.shellProcesses.set(sessionId, proc);
+    // When the shell exits (e.g. the user types `exit`), drop it from the map so
+    // a later shell-attach re-spawns a fresh shell. Guard against clobbering a
+    // replacement that may have been spawned in the meantime.
+    proc.on('exit', () => {
+      if (this.shellProcesses.get(sessionId) === proc) {
+        this.shellProcesses.delete(sessionId);
+      }
+    });
     return proc;
   }
 
@@ -214,6 +225,14 @@ export class PtyManager {
   isShellAlive(sessionId) {
     const proc = this.shellProcesses.get(sessionId);
     return proc ? proc.alive : false;
+  }
+
+  onShellExit(sessionId, callback) {
+    const proc = this.shellProcesses.get(sessionId);
+    if (proc) {
+      if (!proc.alive) callback();
+      else proc.on('exit', callback);
+    }
   }
 
   onShellData(sessionId, callback) {

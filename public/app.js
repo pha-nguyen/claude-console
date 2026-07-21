@@ -10,6 +10,20 @@
   let projects = [];
   let sessions = [];
   let expandedProjects = new Set();
+  // Locked sessions: shown but inert (no hover/click/select), like locking a
+  // track in a video editor. Persisted in localStorage.
+  const LOCKED_SESSIONS_KEY = 'claude-console:lockedSessions';
+  const lockedSessions = new Set(loadLockedSessions());
+  function loadLockedSessions() {
+    try { return JSON.parse(localStorage.getItem(LOCKED_SESSIONS_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveLockedSessions() {
+    try { localStorage.setItem(LOCKED_SESSIONS_KEY, JSON.stringify([...lockedSessions])); }
+    catch {}
+  }
+  let initialStateApplied = false; // expand all projects on first state after load
+  let browseScope = 'worktree'; // 'worktree' (session dir) or 'project' (repo root)
   let reconnectDelay = 1000;
   let toastTimeout = null;
   let shellTerm = null;
@@ -17,6 +31,19 @@
   let expandedDirs = new Set(); // tracks expanded directory paths in file tree
   let openTabs = []; // { id, filename, fullPath, content, type }
   let activeTabId = 'claude';
+  // Select mode: when true, strip Claude's mouse-tracking so the wheel scrolls
+  // xterm locally (fast) and drag selects/copies text. When false, Claude keeps
+  // the mouse (its own scroll + clickable UI). Default OFF.
+  let selectMode = false;
+  // Fixed, never-closeable tabs — single source for rendering, Alt+Tab cycling,
+  // and the closeable-tab guard. Add/rename a fixed tab here only.
+  const FIXED_TABS = [
+    { id: 'claude', label: 'Claude' },
+    { id: 'history', label: 'History' },
+    { id: 'terminal', label: 'Terminal' },
+    { id: 'files', label: 'Files' },
+  ];
+  const FIXED_TAB_IDS = FIXED_TABS.map((t) => t.id);
 
   // --- Sticky scroll state ---
   const NEAR_BOTTOM_LINES = 2;
@@ -24,6 +51,7 @@
   let claudePendingScroll = false;
   let shellSticky = true;
   let shellPendingScroll = false;
+  let shellDead = false; // set when the shell process exits; triggers re-attach
 
   // Attach auto-scroll: force scroll-to-bottom on every write during session
   // attach until output settles. Covers replay buffer + SIGWINCH re-render.
@@ -38,6 +66,43 @@
     // Alternate screen (e.g. vim, less) has no scrollback; always "at bottom"
     if (buf.type === 'alternate') return true;
     return (buf.baseY - buf.viewportY) <= NEAR_BOTTOM_LINES;
+  }
+
+  // Release sticky-follow when the user scrolls up. During active streaming the
+  // onScroll handler is guarded by claudePendingScroll (which is nearly always
+  // set mid-write), so genuine user scroll-ups get swallowed and auto-scroll
+  // yanks the view back to the bottom. Wheel/touch "up" is unambiguous user
+  // intent, so honor it immediately and stop generating auto-scrolls. The
+  // onScroll handler re-enables sticky once the user returns to the bottom.
+  function releaseClaudeStick() {
+    claudeSticky = false;
+    claudePendingScroll = false;
+    claudeAttachScroll = false;
+    clearTimeout(claudeAttachTimer);
+  }
+  function releaseShellStick() {
+    shellSticky = false;
+    shellPendingScroll = false;
+    shellAttachScroll = false;
+    clearTimeout(shellAttachTimer);
+  }
+
+  // Attach wheel/touch "scroll up" intent detection to a terminal's container.
+  function attachScrollIntent(containerEl, release) {
+    containerEl.addEventListener('wheel', (e) => {
+      if (e.deltaY < 0) release();
+    }, { passive: true });
+
+    let lastTouchY = null;
+    containerEl.addEventListener('touchstart', (e) => {
+      lastTouchY = e.touches[0] ? e.touches[0].clientY : null;
+    }, { passive: true });
+    containerEl.addEventListener('touchmove', (e) => {
+      if (lastTouchY == null || !e.touches[0]) return;
+      const y = e.touches[0].clientY;
+      if (y > lastTouchY) release(); // finger moved down → viewing older output
+      lastTouchY = y;
+    }, { passive: true });
   }
 
   // --- DOM refs ---
@@ -56,7 +121,13 @@
   const btnSelectDir = document.getElementById('btn-select-dir');
   const btnModalCancel = document.getElementById('btn-modal-cancel');
   const btnModalCreate = document.getElementById('btn-modal-create');
-  const rightPanel = document.getElementById('right-panel');
+  const shellPane = document.getElementById('shell-pane');
+  const filesPane = document.getElementById('files-pane');
+  const historyPane = document.getElementById('history-pane');
+  const historyContent = document.getElementById('history-content');
+  const historyStatus = document.getElementById('history-status');
+  const historyRefresh = document.getElementById('history-refresh');
+  const filesScopeToggle = document.getElementById('files-scope-toggle');
   const shellTerminalEl = document.getElementById('shell-terminal');
   const rightPanelPath = document.getElementById('right-panel-path');
   const fileTreeEl = document.getElementById('file-tree');
@@ -66,8 +137,6 @@
   const fileViewerPath = document.getElementById('file-viewer-path');
   const fileViewerRefresh = document.getElementById('file-viewer-refresh');
   const fileViewerContent = document.getElementById('file-viewer-content');
-  const btnToggleFileTree = document.getElementById('btn-toggle-file-tree');
-  const fileTreeSection = document.getElementById('file-tree-section');
 
   // --- Mobile responsive DOM refs ---
   const sidebarEl = document.getElementById('sidebar');
@@ -124,10 +193,29 @@
   }
 
   // --- Helpers ---
+  let disconnectWarnedAt = 0;
+  const connectionBanner = document.getElementById('connection-banner');
+
+  // Reflect WS connection state in the UI: show a reconnecting banner and dim
+  // status dots (liveness is unknown while disconnected).
+  function setConnected(connected) {
+    if (connectionBanner) connectionBanner.classList.toggle('hidden', connected);
+    document.body.classList.toggle('ws-disconnected', !connected);
+  }
+
   function wsSend(data) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(data);
+      return true;
     }
+    // Dropped because the socket is down — warn the user (throttled) so typing
+    // into a disconnected terminal isn't silently lost.
+    const now = performance.now();
+    if (now - disconnectWarnedAt > 3000) {
+      disconnectWarnedAt = now;
+      showToast('Disconnected — input not sent. Reconnecting…', 'warning', 3000);
+    }
+    return false;
   }
 
   function debounce(fn, ms) {
@@ -178,7 +266,7 @@
   }
 
   // --- Confirmation dialog ---
-  function showConfirmDialog(title, message, onConfirm, onCancel) {
+  function showConfirmDialog(title, message, onConfirm, onCancel, confirmLabel = 'Delete Anyway', extraButton = null) {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
 
@@ -199,18 +287,32 @@
     cancelBtn.textContent = 'Cancel';
     cancelBtn.onclick = () => {
       overlay.remove();
+      document.removeEventListener('keydown', handleEscape);
       if (onCancel) onCancel();
     };
 
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'confirm-ok';
-    confirmBtn.textContent = 'Delete Anyway';
+    confirmBtn.textContent = confirmLabel;
     confirmBtn.onclick = () => {
       overlay.remove();
+      document.removeEventListener('keydown', handleEscape);
       if (onConfirm) onConfirm();
     };
 
     buttons.appendChild(cancelBtn);
+    // Optional third action (e.g. "New Session") between Cancel and Confirm.
+    if (extraButton && extraButton.label) {
+      const extraBtn = document.createElement('button');
+      extraBtn.className = 'confirm-extra';
+      extraBtn.textContent = extraButton.label;
+      extraBtn.onclick = () => {
+        overlay.remove();
+        document.removeEventListener('keydown', handleEscape);
+        if (extraButton.onClick) extraButton.onClick();
+      };
+      buttons.appendChild(extraBtn);
+    }
     buttons.appendChild(confirmBtn);
     dialog.appendChild(titleEl);
     dialog.appendChild(messageEl);
@@ -222,6 +324,7 @@
     overlay.onclick = (e) => {
       if (e.target === overlay) {
         overlay.remove();
+        document.removeEventListener('keydown', handleEscape);
         if (onCancel) onCancel();
       }
     };
@@ -237,6 +340,71 @@
     document.addEventListener('keydown', handleEscape);
   }
 
+  // Write text to the clipboard, robust to "Document is not focused" errors.
+  // The async Clipboard API (navigator.clipboard.writeText) rejects when the
+  // page lacks focus (common with an xterm canvas / inside a tunnel). The
+  // legacy hidden-textarea + execCommand('copy') path runs synchronously in the
+  // user gesture and needs neither focus nor a permission prompt, so we try it
+  // first and fall back to the async API.
+  function copyTextToClipboard(text) {
+    if (!text) return;
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) return;
+    } catch { /* fall through to async API */ }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  }
+
+  // Strip the escape sequences Claude's TUI uses to enable mouse tracking
+  // (DECSET/DECRST modes 1000–1006, 1015). Long conversations switch Claude
+  // into full TUI mode, which turns mouse tracking ON and makes xterm forward
+  // drags/wheel to Claude instead of selecting/scrolling locally — breaking
+  // drag-to-copy. Removing these keeps the Claude terminal in normal mouse
+  // behavior. Trade-off: mouse CLICKS inside Claude's UI don't register — use
+  // the keyboard (arrows/Enter) for its menus. Claude terminal only; the shell
+  // is untouched. Preserves ?1049 (alt-screen) and ?25 (cursor).
+  // Match any DECSET/DECRST private-mode sequence: ESC [ ? <params> (h|l),
+  // where params is a ';'-separated list (apps often combine, e.g.
+  // \x1b[?1000;1002;1006h). Remove only the mouse-mode numbers, preserving any
+  // non-mouse modes in the same sequence (e.g. 1049 alt-screen, 2004 bracketed
+  // paste) so Claude's rendering/paste behavior is untouched.
+  const MOUSE_MODES = new Set(['1000', '1001', '1002', '1003', '1005', '1006', '1015']);
+  const DEC_PRIVATE_SEQ = /\x1b\[\?([0-9;]+)([hl])/g;
+  function stripMouseTracking(data) {
+    return data.replace(DEC_PRIVATE_SEQ, (full, params, action) => {
+      const kept = params.split(';').filter((p) => !MOUSE_MODES.has(p));
+      if (kept.length === params.split(';').length) return full; // no mouse modes → unchanged
+      return kept.length ? `\x1b[?${kept.join(';')}${action}` : '';
+    });
+  }
+
+  // Copy a terminal's selection to the clipboard the instant a drag ends.
+  // In a live TUI (Claude) the visible highlight is wiped by the next repaint,
+  // so we grab the text on mouseup — a real user gesture, before the repaint —
+  // via the focus-independent execCommand path. (We only copy on mouseup, not
+  // on every selectionChange, so the hidden-textarea copy can't fight xterm's
+  // in-progress selection.)
+  // Pairs with macOptionClickForcesSelection (which enables the drag itself).
+  function attachSelectionCopy(termInstance, containerEl) {
+    if (!containerEl) return;
+    containerEl.addEventListener('mouseup', () => {
+      if (!termInstance.hasSelection || !termInstance.hasSelection()) return;
+      copyTextToClipboard(termInstance.getSelection());
+    });
+  }
+
   // --- Terminal setup ---
   function initTerminal() {
     term = new Terminal({
@@ -248,28 +416,31 @@
       lineHeight: 1.2,
       letterSpacing: 0,
       allowTransparency: false,
+      // Hold Option (Mac) while dragging to force a text selection even when
+      // Claude's TUI has mouse tracking enabled.
+      macOptionClickForcesSelection: true,
       theme: {
-        background: '#1a1a2e',
-        foreground: '#d4d4d4',
-        cursor: '#e94560',
-        cursorAccent: '#1a1a2e',
-        selectionBackground: '#3a3a5e',
-        black: '#1a1a2e',
-        red: '#f44747',
-        green: '#4ec9b0',
-        yellow: '#dcdcaa',
-        blue: '#569cd6',
-        magenta: '#c586c0',
-        cyan: '#9cdcfe',
-        white: '#d4d4d4',
-        brightBlack: '#6b7280',
-        brightRed: '#f44747',
-        brightGreen: '#4ec9b0',
-        brightYellow: '#dcdcaa',
-        brightBlue: '#569cd6',
-        brightMagenta: '#c586c0',
-        brightCyan: '#9cdcfe',
-        brightWhite: '#ffffff',
+        background: '#272822',
+        foreground: '#f8f8f2',
+        cursor: '#f92672',
+        cursorAccent: '#272822',
+        selectionBackground: '#49483e',
+        black: '#272822',
+        red: '#f92672',
+        green: '#a6e22e',
+        yellow: '#e6db74',
+        blue: '#66d9ef',
+        magenta: '#ae81ff',
+        cyan: '#a1efe4',
+        white: '#f8f8f2',
+        brightBlack: '#75715e',
+        brightRed: '#f92672',
+        brightGreen: '#a6e22e',
+        brightYellow: '#e6db74',
+        brightBlue: '#66d9ef',
+        brightMagenta: '#ae81ff',
+        brightCyan: '#a1efe4',
+        brightWhite: '#f9f8f5',
       },
     });
 
@@ -278,6 +449,7 @@
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
     term.open(terminalEl);
+    attachSelectionCopy(term, terminalEl);
 
     // WebGL addon for sharper rendering — skip on mobile (GPU issues on low-end devices).
     // This check runs once at init. Addons can't be unloaded, so viewport changes after
@@ -325,6 +497,17 @@
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(terminalEl);
 
+    // Honor user scroll-up (wheel/touch) immediately, even mid-stream.
+    attachScrollIntent(terminalEl, releaseClaudeStick);
+
+    // Keep keyboard focus on the terminal so arrow keys reach Claude's
+    // interactive menus. Clicking a tab/sidebar/file can move DOM focus away;
+    // any pointer press back inside the terminal area must restore it, else
+    // Up/Down scroll the page instead of moving the menu selection.
+    const refocusTerm = () => { if (activeTabId === 'claude') term.focus(); };
+    terminalEl.addEventListener('mousedown', refocusTerm);
+    terminalEl.addEventListener('touchstart', refocusTerm, { passive: true });
+
     // Sticky scroll: track user scroll position.
     // Skip during attach (forced auto-scroll) and when a write-triggered scroll
     // is pending — onScroll fires mid-write when baseY increases before viewport
@@ -357,28 +540,31 @@
       lineHeight: 1.2,
       letterSpacing: 0,
       allowTransparency: false,
+      // Hold Option (Mac) while dragging to force a text selection even when
+      // Claude's TUI has mouse tracking enabled.
+      macOptionClickForcesSelection: true,
       theme: {
-        background: '#1a1a2e',
-        foreground: '#d4d4d4',
-        cursor: '#e94560',
-        cursorAccent: '#1a1a2e',
-        selectionBackground: '#3a3a5e',
-        black: '#1a1a2e',
-        red: '#f44747',
-        green: '#4ec9b0',
-        yellow: '#dcdcaa',
-        blue: '#569cd6',
-        magenta: '#c586c0',
-        cyan: '#9cdcfe',
-        white: '#d4d4d4',
-        brightBlack: '#6b7280',
-        brightRed: '#f44747',
-        brightGreen: '#4ec9b0',
-        brightYellow: '#dcdcaa',
-        brightBlue: '#569cd6',
-        brightMagenta: '#c586c0',
-        brightCyan: '#9cdcfe',
-        brightWhite: '#ffffff',
+        background: '#272822',
+        foreground: '#f8f8f2',
+        cursor: '#f92672',
+        cursorAccent: '#272822',
+        selectionBackground: '#49483e',
+        black: '#272822',
+        red: '#f92672',
+        green: '#a6e22e',
+        yellow: '#e6db74',
+        blue: '#66d9ef',
+        magenta: '#ae81ff',
+        cyan: '#a1efe4',
+        white: '#f8f8f2',
+        brightBlack: '#75715e',
+        brightRed: '#f92672',
+        brightGreen: '#a6e22e',
+        brightYellow: '#e6db74',
+        brightBlue: '#66d9ef',
+        brightMagenta: '#ae81ff',
+        brightCyan: '#a1efe4',
+        brightWhite: '#f9f8f5',
       },
     });
 
@@ -388,6 +574,7 @@
     shellTerm.loadAddon(shellFitAddon);
     shellTerm.loadAddon(webLinksAddon);
     shellTerm.open(shellTerminalEl);
+    attachSelectionCopy(shellTerm, shellTerminalEl);
 
     if (!isMobile()) {
       try {
@@ -433,6 +620,9 @@
     const shellResizeObserver = new ResizeObserver(handleShellResize);
     shellResizeObserver.observe(shellTerminalEl);
 
+    // Honor user scroll-up (wheel/touch) immediately, even mid-stream.
+    attachScrollIntent(shellTerminalEl, releaseShellStick);
+
     // Sticky scroll: skip during attach and when write-triggered scroll is pending
     shellTerm.onScroll(() => {
       if (shellAttachScroll || shellPendingScroll) return;
@@ -459,6 +649,7 @@
 
     ws.onopen = () => {
       reconnectDelay = 1000;
+      setConnected(true);
       if (activeSessionId) {
         attachSession(activeSessionId);
       }
@@ -482,7 +673,10 @@
             } else if (claudeSticky) {
               claudePendingScroll = true;
             }
-            term.write(msg.data);
+            // In Select mode, strip mouse-tracking so the wheel scrolls xterm
+            // locally and drag selects/copies. Otherwise pass through so Claude
+            // controls the mouse (its own scroll + clickable UI).
+            term.write(selectMode ? stripMouseTracking(msg.data) : msg.data);
           }
           break;
 
@@ -509,17 +703,18 @@
         case 'state':
           projects = msg.projects;
           sessions = msg.sessions;
+          pruneLockedSessions();
+          // On the first state after a page load, expand every project so all
+          // sessions are visible without manual clicking, and auto-select the
+          // session the user was last in (falling back to the most recent one).
+          if (!initialStateApplied) {
+            initialStateApplied = true;
+            for (const proj of projects) expandedProjects.add(proj.id);
+            maybeAutoSelectSession().catch(() => {});
+          }
           // Reconcile: if active session no longer exists, return to home
           if (activeSessionId && !sessions.find((s) => s.id === activeSessionId)) {
-            activeSessionId = null;
-            term.reset();
-            noSession.classList.remove('hidden');
-            rightPanel.classList.add('hidden');
-            tabBar.classList.remove('visible');
-            fileViewer.classList.add('hidden');
-            document.getElementById('terminal-wrapper').style.display = '';
-            document.getElementById('terminal-wrapper').style.inset = '0';
-            updateMobileTopbar();
+            returnToHome();
           }
           renderSidebar();
           updateMobileTopbar();
@@ -527,15 +722,7 @@
 
         case 'session-deleted':
           if (msg.sessionId === activeSessionId) {
-            activeSessionId = null;
-            term.reset();
-            noSession.classList.remove('hidden');
-            rightPanel.classList.add('hidden');
-            tabBar.classList.remove('visible');
-            fileViewer.classList.add('hidden');
-            document.getElementById('terminal-wrapper').style.display = '';
-            document.getElementById('terminal-wrapper').style.inset = '0';
-            updateMobileTopbar();
+            returnToHome();
           }
           break;
 
@@ -563,12 +750,23 @@
 
         case 'shell-replay-done':
           if (msg.sessionId === activeSessionId) {
+            shellDead = false;
             shellTerm.write('', () => {
               requestAnimationFrame(() => {
                 shellTerm.scrollToBottom();
                 shellSticky = true;
               });
             });
+          }
+          break;
+
+        case 'shell-exited':
+          // The shell process ended (e.g. user typed `exit`). Mark it dead so
+          // the next Terminal-tab view re-attaches (spawns a fresh shell), and
+          // show a hint in the frozen pane.
+          if (msg.sessionId === activeSessionId) {
+            shellDead = true;
+            shellTerm.write('\r\n\x1b[2m[shell exited — reopen the Terminal tab to start a new shell]\x1b[0m\r\n');
           }
           break;
 
@@ -589,6 +787,7 @@
     };
 
     ws.onclose = () => {
+      setConnected(false);
       const jitter = reconnectDelay * (0.5 + Math.random());
       setTimeout(connect, jitter);
       reconnectDelay = Math.min(reconnectDelay * 2, 30000);
@@ -597,8 +796,79 @@
     ws.onerror = () => { ws.close(); };
   }
 
+  // Reset the UI to the "no active session" home state.
+  function returnToHome() {
+    activeSessionId = null;
+    forgetLastSession();
+    term.reset();
+    noSession.classList.remove('hidden');
+    tabBar.classList.remove('visible');
+    shellPane.classList.add('hidden');
+    filesPane.classList.add('hidden');
+    historyPane.classList.add('hidden');
+    fileViewer.classList.add('hidden');
+    const tw = document.getElementById('terminal-wrapper');
+    tw.style.display = '';
+    tw.style.inset = '0';
+    updateMobileTopbar();
+  }
+
+  // Persist the last-opened session so a page refresh can re-select it.
+  const LAST_SESSION_KEY = 'claude-console:lastSessionId';
+  function rememberLastSession(id) {
+    try { localStorage.setItem(LAST_SESSION_KEY, id); } catch {}
+  }
+  function forgetLastSession() {
+    try { localStorage.removeItem(LAST_SESSION_KEY); } catch {}
+  }
+  function getLastSession() {
+    try { return localStorage.getItem(LAST_SESSION_KEY); } catch { return null; }
+  }
+
+  // On first load, re-open the session the user was last in. Prefer the
+  // persisted last session; otherwise the most recently created one. Does
+  // nothing (keeps the welcome screen) when there are no sessions at all.
+  async function maybeAutoSelectSession() {
+    if (activeSessionId) return; // already attached (e.g. reconnect)
+    if (sessions.length === 0) return; // no sessions → show welcome screen
+
+    // Don't auto-open a session parked in a locked project.
+    const selectable = sessions.filter((s) => !lockedSessions.has(s.id));
+    if (selectable.length === 0) return;
+
+    const lastId = getLastSession();
+    let target = lastId && selectable.find((s) => s.id === lastId);
+    if (!target) {
+      target = [...selectable].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+      )[0];
+    }
+    if (!target) return;
+
+    // Expand the parent project so the selection is visible in the sidebar.
+    expandedProjects.add(target.projectId);
+
+    if (!target.alive && target.claudeSessionId) {
+      attachSession(target.id, { showLoading: true });
+      const result = await restartSession(target.id, { suppressModal: true });
+      // User switched away while we waited — leave their choice alone.
+      if (activeSessionId !== target.id) return;
+      if (result === true) {
+        attachSession(target.id);
+      } else {
+        // Restart failed or the conversation is running elsewhere. Don't strand
+        // the pane on 'Resuming…' — return to the welcome screen so the user can
+        // pick an action deliberately (e.g. click the session to Fork/New).
+        returnToHome();
+      }
+    } else {
+      attachSession(target.id);
+    }
+  }
+
   function attachSession(sessionId, opts = {}) {
     activeSessionId = sessionId;
+    rememberLastSession(sessionId);
     term.reset();
     shellTerm.reset();
 
@@ -616,24 +886,24 @@
     shellAttachScroll = true;
     shellSticky = true;
     shellPendingScroll = false;
+    shellDead = false;
     clearTimeout(shellAttachTimer);
     noSession.classList.add('hidden');
 
-    // Show right panel and update path display
+    // Update the Files pane path for this session
     const session = sessions.find((s) => s.id === sessionId);
     if (session) {
-      rightPanel.classList.remove('hidden');
       rightPanelPath.textContent = session.worktreePath || '';
       rightPanelPath.title = session.worktreePath || '';
 
       // Reset tabs and file tree for new session
       openTabs = [];
       activeTabId = 'claude';
+      browseScope = 'worktree';
+      updateScopeToggleLabel();
       switchTab('claude');
       renderTabs();
       initFileTree();
-    } else {
-      rightPanel.classList.add('hidden');
     }
 
     // In loading-only mode, don't send attach yet (restart hasn't completed)
@@ -650,16 +920,35 @@
     }));
 
     // Attach shell terminal
-    wsSend(JSON.stringify({
-      type: 'shell-attach',
-      sessionId,
-      cols: shellTerm.cols,
-      rows: shellTerm.rows,
-    }));
+    sendShellAttach();
+
+    // After layout settles, re-fit and send the true width. On a fresh page
+    // load / reconnect (e.g. switching from phone to laptop) the cols captured
+    // above can be stale/narrow because the terminal hadn't been laid out at the
+    // new viewport yet; this forces the PTY to the laptop width so Claude
+    // reflows its live UI wide instead of staying at the phone's narrow column.
+    requestAnimationFrame(() => {
+      if (!fitAddon || activeSessionId !== sessionId) return;
+      fitAddon.fit();
+      wsSend(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    });
 
     term.focus();
     renderSidebar();
     updateMobileTopbar();
+  }
+
+  // (Re)attach the shell for the active session. The server spawns a fresh shell
+  // if none is alive, so this doubles as "respawn after the shell exited".
+  function sendShellAttach() {
+    if (!activeSessionId) return;
+    shellDead = false;
+    wsSend(JSON.stringify({
+      type: 'shell-attach',
+      sessionId: activeSessionId,
+      cols: shellTerm.cols,
+      rows: shellTerm.rows,
+    }));
   }
 
   // --- Sidebar ---
@@ -701,6 +990,7 @@
         li.appendChild(dot);
         li.appendChild(sName);
         li.onclick = () => {
+          if (lockedSessions.has(s.id)) return; // locked session → inert
           if (!s.alive && s.claudeSessionId) {
             restartSession(s.id);
           }
@@ -736,6 +1026,23 @@
       name.className = 'project-name';
       name.textContent = proj.name;
 
+      // New-session button (beside the project row)
+      const newSessBtn = document.createElement('button');
+      newSessBtn.className = 'project-new-session';
+      newSessBtn.textContent = '+';
+      newSessBtn.title = 'New session';
+      newSessBtn.onclick = (e) => {
+        e.stopPropagation();
+        expandedProjects.add(proj.id);
+        renderSidebar();
+        // After re-render, open the inline input on this project's list
+        requestAnimationFrame(() => {
+          const projGroup = projectListEl.querySelector(`[data-project-id="${proj.id}"]`);
+          const ul = projGroup && projGroup.querySelector('.project-sessions');
+          if (ul) showInlineSessionInput(ul, proj.id);
+        });
+      };
+
       const del = document.createElement('button');
       del.className = 'project-delete';
       del.textContent = '\u00D7';
@@ -743,14 +1050,17 @@
       del.onclick = (e) => {
         e.stopPropagation();
         showConfirmDialog(
-          'Delete Project',
-          `Delete "${proj.name}" and all its sessions?`,
-          () => deleteProject(proj.id)
+          'Close Project',
+          `Close "${proj.name}" and all its sessions?`,
+          () => deleteProject(proj.id),
+          null,
+          'Close Project'
         );
       };
 
       header.appendChild(arrow);
       header.appendChild(name);
+      header.appendChild(newSessBtn);
       header.appendChild(del);
 
       header.onclick = () => {
@@ -774,8 +1084,10 @@
       if (expandedProjects.has(proj.id)) ul.classList.add('expanded');
 
       for (const s of projSessions) {
+        const sessionLocked = lockedSessions.has(s.id);
         const li = document.createElement('li');
         if (s.id === activeSessionId) li.classList.add('active');
+        if (sessionLocked) li.classList.add('locked');
 
         const dot = document.createElement('span');
         dot.className = 'status-dot';
@@ -807,26 +1119,56 @@
         const actions = document.createElement('div');
         actions.className = 'session-actions';
 
-        // Archive button (only show if session has worktree)
-        if (s.worktreePath) {
-          const sArchive = document.createElement('button');
-          sArchive.className = 'session-archive';
-          sArchive.innerHTML = '&#128451;'; // Archive icon
-          sArchive.title = 'Archive (keep branch, remove worktree)';
-          sArchive.onclick = (e) => {
+        // Lock (eye) action — a locked session stays visible but inert (no
+        // hover/click/select), like locking a track. Thin monochrome glyph to
+        // match the × (close) and ⤓ (merge) icons. Persisted per session.
+        const sLock = document.createElement('button');
+        sLock.className = 'session-lock' + (sessionLocked ? ' locked' : '');
+        sLock.textContent = sessionLocked ? '⊘' : '◎'; // ⊘ locked / ◎ open
+        sLock.title = sessionLocked
+          ? 'Session locked — click to unlock'
+          : 'Lock session — keep visible but non-interactive';
+        sLock.onclick = (e) => {
+          e.stopPropagation();
+          if (lockedSessions.has(s.id)) lockedSessions.delete(s.id);
+          else lockedSessions.add(s.id);
+          saveLockedSessions();
+          renderSidebar();
+        };
+        actions.appendChild(sLock);
+
+        // Merge-to-local action (only for sessions with a worktree branch)
+        if (s.branchName) {
+          const sMerge = document.createElement('button');
+          sMerge.className = 'session-merge';
+          sMerge.textContent = '\u2913'; // \u2913 down-to-bar: "bring changes down to local"
+          sMerge.title = 'Merge this session\u2019s changes into your local branch';
+          sMerge.onclick = (e) => {
             e.stopPropagation();
-            archiveSession(s.id, s.branchName);
+            showConfirmDialog(
+              'Merge to Local',
+              `Merge "${s.name}" into your local branch? Uncommitted work in the session is auto-committed first.`,
+              () => mergeSession(s.id),
+              null,
+              'Merge'
+            );
           };
-          actions.appendChild(sArchive);
+          actions.appendChild(sMerge);
         }
 
         const sDel = document.createElement('button');
         sDel.className = 'session-delete';
         sDel.textContent = '\u00D7';
-        sDel.title = 'Delete session';
+        sDel.title = 'Close session';
         sDel.onclick = (e) => {
           e.stopPropagation();
-          deleteSession(s.id);
+          showConfirmDialog(
+            'Close Session',
+            `Close "${s.name}"?`,
+            () => deleteSession(s.id),
+            null,
+            'Close Session'
+          );
         };
         actions.appendChild(sDel);
 
@@ -836,6 +1178,8 @@
         li.appendChild(actions);
 
         li.onclick = async () => {
+          // Locked session: inert (but the lock button itself still works).
+          if (lockedSessions.has(s.id)) return;
           // Guard against rapid clicking: ignore if already switching to this session
           if (activeSessionId === s.id && s.alive) return;
 
@@ -855,19 +1199,6 @@
         ul.appendChild(li);
       }
 
-      // New session button
-      const newBtn = document.createElement('button');
-      newBtn.className = 'btn-new-session';
-      newBtn.textContent = '+ New Session';
-      newBtn.onclick = (e) => {
-        e.stopPropagation();
-        showInlineSessionInput(ul, proj.id);
-      };
-
-      if (expandedProjects.has(proj.id)) {
-        ul.appendChild(document.createElement('li')).appendChild(newBtn);
-      }
-
       group.appendChild(ul);
       projectListEl.appendChild(group);
     }
@@ -882,7 +1213,7 @@
     input.className = 'inline-session-input';
     input.type = 'text';
     input.placeholder = 'Session name...';
-    ul.insertBefore(input, ul.lastElementChild);
+    ul.appendChild(input);
     input.focus();
 
     input.onkeydown = async (e) => {
@@ -917,8 +1248,39 @@
     return await res.json();
   }
 
-  async function deleteProject(id) {
-    await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+  async function deleteProject(id, force = false) {
+    const url = force ? `/api/projects/${id}?force=true` : `/api/projects/${id}`;
+    const res = await fetch(url, { method: 'DELETE' });
+    if (res.ok) return;
+
+    const err = await res.json().catch(() => ({}));
+    if (err.code === 'DIRTY_WORKTREE') {
+      // Server refused because a session has uncommitted changes. Offer a
+      // forced retry (mirrors deleteSession's dirty-worktree flow).
+      const names = Array.isArray(err.sessions) && err.sessions.length
+        ? ` (${err.sessions.join(', ')})` : '';
+      showConfirmDialog(
+        'Uncommitted Changes',
+        `Some sessions have uncommitted changes${names} that will be permanently lost. Close the project anyway?`,
+        () => deleteProject(id, true),
+        null,
+        'Discard & Close'
+      );
+      return;
+    }
+    showToast(err.error || 'Failed to close project', 'error');
+  }
+
+  // Drop lock entries for sessions that no longer exist (deleted via any path)
+  // so the persisted set doesn't grow unbounded. Called on each state update.
+  function pruneLockedSessions() {
+    if (lockedSessions.size === 0) return;
+    const live = new Set(sessions.map((s) => s.id));
+    let changed = false;
+    for (const id of [...lockedSessions]) {
+      if (!live.has(id)) { lockedSessions.delete(id); changed = true; }
+    }
+    if (changed) saveLockedSessions();
   }
 
   async function createSession(projectId, name) {
@@ -963,78 +1325,88 @@
     if (!res.ok) {
       const err = await res.json();
       if (err.code === 'DIRTY_WORKTREE') {
-        // Show confirmation dialog for dirty worktree
+        // Second confirmation: closing would discard uncommitted git changes.
         showConfirmDialog(
           'Uncommitted Changes',
-          'This session has uncommitted changes. Delete anyway?',
-          () => deleteSession(id, true) // Retry with force
+          'This session has uncommitted changes that will be permanently lost. Close anyway?',
+          () => deleteSession(id, true), // Retry with force
+          null,
+          'Discard & Close'
         );
         return;
       }
       if (err.code === 'DIRTY_CHECK_FAILED') {
         showConfirmDialog(
           'Cannot Verify',
-          'Unable to verify worktree status. Delete anyway?',
-          () => deleteSession(id, true)
+          'Unable to verify whether this session has uncommitted changes. Close anyway?',
+          () => deleteSession(id, true),
+          null,
+          'Close Anyway'
         );
         return;
       }
       // Show other errors as toast
-      showToast(err.error || 'Failed to delete session', 'error');
+      showToast(err.error || 'Failed to close session', 'error');
       return;
     }
 
     if (activeSessionId === id) {
-      activeSessionId = null;
-      term.reset();
-      noSession.classList.remove('hidden');
-      rightPanel.classList.add('hidden');
-      updateMobileTopbar();
+      returnToHome();
     }
   }
 
-  async function archiveSession(id, branchName, force = false) {
-    const url = force
-      ? `/api/sessions/${id}/archive?force=true`
-      : `/api/sessions/${id}/archive`;
+  async function mergeSession(id) {
+    showToast('Merging to local…', 'info', 2000);
+    let res, data;
+    try {
+      res = await fetch(`/api/sessions/${id}/merge`, { method: 'POST' });
+      data = await res.json();
+    } catch {
+      showToast('Merge request failed', 'error');
+      return;
+    }
+    if (!res.ok) {
+      // Conflicts / dirty main / etc. — show the actionable server message.
+      showToast(data.error || 'Merge failed', 'error', 7000);
+      return;
+    }
+    showToast(data.message || 'Merged to local.', 'success', 6000);
+  }
+
+  async function restartSession(id, { fork = false, suppressModal = false } = {}) {
+    const url = fork
+      ? `/api/sessions/${id}/restart?fork=true`
+      : `/api/sessions/${id}/restart`;
     const res = await fetch(url, { method: 'POST' });
 
     if (!res.ok) {
       const err = await res.json();
-      if (err.code === 'DIRTY_WORKTREE') {
-        showConfirmDialog(
-          'Uncommitted Changes',
-          'This session has uncommitted changes. Archive anyway?',
-          () => archiveSession(id, branchName, true)
-        );
-        return;
-      }
-      if (err.code === 'DIRTY_CHECK_FAILED') {
-        showConfirmDialog(
-          'Cannot Verify',
-          'Unable to verify worktree status. Archive anyway?',
-          () => archiveSession(id, branchName, true)
-        );
-        return;
-      }
-      showToast(err.error || 'Failed to archive session', 'error');
-      return;
-    }
-
-    const result = await res.json();
-    const msg = result.branch
-      ? `Session archived. Branch "${result.branch}" preserved.`
-      : 'Session archived successfully.';
-    showToast(msg, 'success');
-  }
-
-  async function restartSession(id) {
-    const res = await fetch(`/api/sessions/${id}/restart`, { method: 'POST' });
-
-    if (!res.ok) {
-      const err = await res.json();
       if (err.code === 'WORKTREE_MISSING') {
-        showToast('Worktree has been removed. Session cannot be restarted.', 'error');
+        if (!suppressModal) showToast('Worktree has been removed. Session cannot be restarted.', 'error');
+      } else if (err.code === 'SESSION_RUNNING_ELSEWHERE') {
+        // Suppressed during unprompted auto-select-on-load: don't pop a modal
+        // the user didn't ask for. Signal the caller to handle it quietly.
+        if (suppressModal) return 'running_elsewhere';
+        // The conversation is live as a background agent — offer to fork a copy.
+        // A separate "New Session" button starts a fresh session in the same
+        // project so the user can /resume themselves. Cancel just dismisses.
+        const orig = sessions.find((s) => s.id === id);
+        showConfirmDialog(
+          'Session Running Elsewhere',
+          'This conversation is already running as a background agent, so it can’t be resumed here directly. Fork a copy to continue in the console, or start a new session where you can /resume yourself.',
+          async () => {
+            const ok = await restartSession(id, { fork: true });
+            if (ok) attachSession(id);
+          },
+          null,
+          'Fork',
+          {
+            label: 'New',
+            onClick: () => {
+              if (orig) createSession(orig.projectId, `${orig.name} (resume)`);
+            },
+          }
+        );
       } else {
         showToast(err.error || 'Failed to restart session', 'error');
       }
@@ -1179,6 +1551,7 @@
     if (!activeSessionId) return { dirs: [], files: [], hasMore: false };
     const params = new URLSearchParams({ sessionId: activeSessionId });
     if (relativePath) params.set('path', relativePath);
+    if (browseScope === 'project') params.set('scope', 'project');
     const res = await fetch(`/api/browse?${params}`);
     if (!res.ok) return { dirs: [], files: [], hasMore: false };
     const data = await res.json();
@@ -1293,16 +1666,124 @@
     renderFileTreeDir(fileTreeEl, '', 0);
   }
 
-  // File tree collapse/expand toggle
-  btnToggleFileTree.onclick = () => {
-    const isCollapsed = fileTreeSection.classList.toggle('collapsed');
-    btnToggleFileTree.innerHTML = isCollapsed ? '&#x25B6;' : '&#x25BC;';
-    btnToggleFileTree.title = isCollapsed ? 'Expand file tree' : 'Collapse file tree';
-    // Refit shell terminal after layout change
-    requestAnimationFrame(() => {
-      if (shellFitAddon) shellFitAddon.fit();
-    });
-  };
+  // Files scope toggle (worktree <-> project root)
+  function updateScopeToggleLabel() {
+    if (!filesScopeToggle) return;
+    const inProject = browseScope === 'project';
+    filesScopeToggle.textContent = inProject ? 'Session worktree' : 'Project root';
+    filesScopeToggle.classList.toggle('active', inProject);
+    filesScopeToggle.title = inProject
+      ? 'Currently browsing the whole project. Click to return to this session’s worktree.'
+      : 'Currently browsing this session’s worktree. Click to browse the whole project root.';
+  }
+  if (filesScopeToggle) {
+    filesScopeToggle.onclick = () => {
+      browseScope = browseScope === 'project' ? 'worktree' : 'project';
+      updateScopeToggleLabel();
+      initFileTree();
+    };
+  }
+
+  // --- Conversation history (transcript) ---
+
+  async function loadHistory() {
+    if (!activeSessionId) return;
+    // Capture the session this load is for; if the user switches sessions before
+    // the fetch resolves, discard the stale response instead of rendering it
+    // into the wrong session's History view.
+    const sid = activeSessionId;
+    historyStatus.textContent = 'Loading…';
+    historyContent.innerHTML = '';
+    let data;
+    try {
+      const res = await fetch(`/api/history?sessionId=${sid}`);
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load history');
+    } catch (e) {
+      if (activeSessionId !== sid) return;
+      historyStatus.textContent = '';
+      const err = document.createElement('div');
+      err.className = 'hist-empty';
+      err.textContent = e.message || 'Failed to load history';
+      historyContent.appendChild(err);
+      return;
+    }
+    if (activeSessionId !== sid) return; // session changed mid-flight
+    renderHistory(data);
+  }
+
+  function renderHistory(data) {
+    historyContent.innerHTML = '';
+    const turns = data.turns || [];
+    historyStatus.textContent = turns.length ? `${turns.length} messages` : '';
+
+    if (turns.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'hist-empty';
+      empty.textContent = data.note || 'No conversation history yet.';
+      historyContent.appendChild(empty);
+      return;
+    }
+
+    for (const turn of turns) {
+      const el = document.createElement('div');
+      el.className = 'hist-turn ' + (turn.role === 'user' ? 'user' : 'assistant');
+
+      const roleEl = document.createElement('div');
+      roleEl.className = 'hist-role';
+      roleEl.textContent = turn.role === 'user' ? 'You' : 'Claude';
+      el.appendChild(roleEl);
+
+      const body = document.createElement('div');
+      body.className = 'hist-body';
+
+      for (const part of turn.parts) {
+        if (part.kind === 'text') {
+          const block = document.createElement('div');
+          renderMarkdownInto(block, part.text);
+          body.appendChild(block);
+        } else if (part.kind === 'thinking') {
+          const t = document.createElement('div');
+          t.className = 'hist-thinking';
+          t.textContent = part.text;
+          body.appendChild(t);
+        } else if (part.kind === 'tool_use') {
+          const tool = document.createElement('div');
+          tool.className = 'hist-tool';
+          const name = document.createElement('span');
+          name.className = 'hist-tool-name';
+          name.textContent = `⚙ ${part.name}`;
+          tool.appendChild(name);
+          if (part.input && Object.keys(part.input).length) {
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(part.input, null, 2);
+            tool.appendChild(pre);
+          }
+          body.appendChild(tool);
+        } else if (part.kind === 'tool_result') {
+          if (!part.text || !part.text.trim()) continue;
+          const tool = document.createElement('div');
+          tool.className = 'hist-tool' + (part.isError ? ' error' : '');
+          const name = document.createElement('span');
+          name.className = 'hist-tool-name';
+          name.textContent = part.isError ? '⚠ tool result' : '← tool result';
+          tool.appendChild(name);
+          const pre = document.createElement('pre');
+          // Cap very long tool outputs so the transcript stays scrollable.
+          pre.textContent = part.text.length > 4000
+            ? part.text.slice(0, 4000) + '\n… (truncated)'
+            : part.text;
+          tool.appendChild(pre);
+          body.appendChild(tool);
+        }
+      }
+
+      el.appendChild(body);
+      historyContent.appendChild(el);
+    }
+  }
+
+  if (historyRefresh) historyRefresh.onclick = () => loadHistory();
 
   // --- Tab System ---
 
@@ -1314,15 +1795,17 @@
     tabBar.classList.add('visible');
     tabList.innerHTML = '';
 
-    // Claude tab (always first, never closeable)
-    const claudeTab = document.createElement('div');
-    claudeTab.className = 'tab' + (activeTabId === 'claude' ? ' active' : '');
-    const claudeLabel = document.createElement('span');
-    claudeLabel.className = 'tab-label';
-    claudeLabel.textContent = 'Claude';
-    claudeTab.appendChild(claudeLabel);
-    claudeTab.onclick = () => switchTab('claude');
-    tabList.appendChild(claudeTab);
+    // Fixed tabs (always present, never closeable)
+    for (const fixed of FIXED_TABS) {
+      const el = document.createElement('div');
+      el.className = 'tab' + (activeTabId === fixed.id ? ' active' : '');
+      const label = document.createElement('span');
+      label.className = 'tab-label';
+      label.textContent = fixed.label;
+      el.appendChild(label);
+      el.onclick = () => switchTab(fixed.id);
+      tabList.appendChild(el);
+    }
 
     // File tabs
     for (const tab of openTabs) {
@@ -1347,6 +1830,45 @@
       el.onclick = () => switchTab(tab.id);
       tabList.appendChild(el);
     }
+
+    // Select-mode toggle, pinned to the end of the tab bar. ON = mouse capture
+    // stripped (fast wheel scroll + drag-to-copy); OFF = Claude controls the
+    // mouse (its own scroll + clickable UI).
+    const selBtn = document.createElement('button');
+    selBtn.id = 'select-mode-toggle';
+    selBtn.className = 'select-mode-toggle' + (selectMode ? ' active' : '');
+    selBtn.textContent = selectMode ? 'Select: On' : 'Select: Off';
+    selBtn.title = selectMode
+      ? 'Select mode ON — wheel scrolls and drag copies. Click to let Claude use the mouse.'
+      : 'Select mode OFF — Claude controls the mouse. Click to enable scroll/copy.';
+    selBtn.onclick = (e) => {
+      e.stopPropagation();
+      setSelectMode(!selectMode);
+    };
+    tabList.appendChild(selBtn);
+  }
+
+  // Flip Select mode and re-sync the Claude terminal's mouse behavior. Toggling
+  // OFF→ON can't retroactively strip an enable Claude already sent, so we also
+  // tell xterm to drop mouse mode immediately by resetting; a SIGWINCH-style
+  // resize nudge makes Claude re-emit its current modes so state converges.
+  function setSelectMode(on) {
+    selectMode = on;
+    renderTabs();
+    // Turning ON: xterm may ALREADY be in mouse mode from an enable Claude sent
+    // before stripping began; stripping only blocks FUTURE enables. So actively
+    // write the DECRST disable sequences to xterm now to leave mouse mode
+    // immediately (from here stripMouseTracking blocks re-enables).
+    if (on && term) {
+      // Disable every mouse-tracking mode we also strip (1000–1006, 1015).
+      term.write('\x1b[?1000l\x1b[?1001l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l');
+    }
+    // Nudge Claude to repaint/re-emit control modes so the change takes effect
+    // on the current screen (when OFF this restores its mouse enables).
+    if (activeSessionId && term) {
+      wsSend(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    }
+    if (activeTabId === 'claude') term.focus();
   }
 
   function switchTab(tabId) {
@@ -1355,19 +1877,39 @@
 
     const termWrapper = document.getElementById('terminal-wrapper');
 
+    // Hide every view; the active branch below reveals exactly one.
+    termWrapper.style.display = 'none';
+    shellPane.classList.add('hidden');
+    filesPane.classList.add('hidden');
+    historyPane.classList.add('hidden');
+    fileViewer.classList.add('hidden');
+
     if (tabId === 'claude') {
-      // Show terminal, hide file viewer
       termWrapper.style.display = '';
       termWrapper.style.inset = '32px 0 0 0';
-      fileViewer.classList.add('hidden');
       term.focus();
-      // Refit terminal since we changed inset
       requestAnimationFrame(() => { if (fitAddon) fitAddon.fit(); });
+    } else if (tabId === 'history') {
+      historyPane.classList.remove('hidden');
+      loadHistory();
+    } else if (tabId === 'terminal') {
+      shellPane.classList.remove('hidden');
+      // If the shell exited (e.g. user typed `exit`), re-attach to spawn a fresh
+      // one now that the user is looking at the Terminal again.
+      if (shellDead) {
+        shellTerm.reset();
+        sendShellAttach();
+      }
+      // xterm can't measure while hidden; fit + focus once visible.
+      requestAnimationFrame(() => {
+        if (shellFitAddon) shellFitAddon.fit();
+        shellTerm.focus();
+      });
+    } else if (tabId === 'files') {
+      filesPane.classList.remove('hidden');
     } else {
-      // Show file viewer, hide terminal
-      termWrapper.style.display = 'none';
+      // Opened-file viewer tab
       fileViewer.classList.remove('hidden');
-
       const tab = openTabs.find(t => t.id === tabId);
       if (tab) {
         renderFileContent(tab);
@@ -1378,21 +1920,29 @@
   function closeTab(tabId) {
     openTabs = openTabs.filter(t => t.id !== tabId);
     if (activeTabId === tabId) {
-      activeTabId = openTabs.length > 0 ? openTabs[openTabs.length - 1].id : 'claude';
+      // Prefer another open file tab; otherwise return to Files (where file tabs
+      // are opened from) rather than jumping back to the Claude terminal.
+      activeTabId = openTabs.length > 0 ? openTabs[openTabs.length - 1].id : 'files';
     }
     switchTab(activeTabId);
   }
 
   async function openFileTab(filePath, filename) {
+    const scope = browseScope;
+    // Tab id is scoped so the same relative path in the worktree vs project root
+    // opens as distinct tabs rather than colliding.
+    const tabId = `${scope}:${filePath}`;
+
     // Check if already open
-    const existing = openTabs.find(t => t.id === filePath);
+    const existing = openTabs.find(t => t.id === tabId);
     if (existing) {
       switchTab(existing.id);
       return;
     }
 
     // Fetch file content
-    const res = await fetch(`/api/file?sessionId=${activeSessionId}&path=${encodeURIComponent(filePath)}`);
+    const scopeParam = scope === 'project' ? '&scope=project' : '';
+    const res = await fetch(`/api/file?sessionId=${activeSessionId}&path=${encodeURIComponent(filePath)}${scopeParam}`);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to load file' }));
@@ -1407,19 +1957,25 @@
       // Binary file response
       const data = await res.json();
       if (data.isBinary) {
-        tab = { id: filePath, filename, fullPath: filePath, content: null, type: 'binary' };
+        tab = { id: tabId, filename, fullPath: filePath, scope, content: null, type: 'binary' };
       }
     } else {
       const content = await res.text();
       const ext = filename.split('.').pop().toLowerCase();
       const type = (ext === 'md' || ext === 'markdown') ? 'markdown' : 'text';
-      tab = { id: filePath, filename, fullPath: filePath, content, type };
+      tab = { id: tabId, filename, fullPath: filePath, scope, content, type };
     }
 
     if (tab) {
       openTabs.push(tab);
       switchTab(tab.id);
     }
+  }
+
+  // Render markdown text into an element via the shared parse+sanitize pipeline.
+  function renderMarkdownInto(el, text) {
+    el.className = 'markdown-body';
+    el.innerHTML = DOMPurify.sanitize(marked.parse(text));
   }
 
   function renderFileContent(tab) {
@@ -1434,9 +1990,7 @@
     }
 
     if (tab.type === 'markdown') {
-      fileViewerContent.className = 'markdown-body';
-      const rawHtml = marked.parse(tab.content);
-      fileViewerContent.innerHTML = DOMPurify.sanitize(rawHtml);
+      renderMarkdownInto(fileViewerContent, tab.content);
       return;
     }
 
@@ -1450,7 +2004,8 @@
     const tab = openTabs.find(t => t.id === activeTabId);
     if (!tab || tab.type === 'binary') return;
 
-    const res = await fetch(`/api/file?sessionId=${activeSessionId}&path=${encodeURIComponent(tab.fullPath)}`);
+    const scopeParam = tab.scope === 'project' ? '&scope=project' : '';
+    const res = await fetch(`/api/file?sessionId=${activeSessionId}&path=${encodeURIComponent(tab.fullPath)}${scopeParam}`);
     if (!res.ok) {
       showToast('Failed to refresh file', 'error');
       return;
@@ -1478,7 +2033,7 @@
 
     if (e.altKey && e.key === 'Tab') {
       e.preventDefault();
-      const allIds = ['claude', ...openTabs.map(t => t.id)];
+      const allIds = [...FIXED_TAB_IDS, ...openTabs.map(t => t.id)];
       const idx = allIds.indexOf(activeTabId);
       const nextIdx = (idx + 1) % allIds.length;
       switchTab(allIds[nextIdx]);
@@ -1486,54 +2041,10 @@
 
     if (e.altKey && e.key === 'w') {
       e.preventDefault();
-      if (activeTabId !== 'claude') {
+      // Only opened-file tabs are closeable (not the fixed tabs)
+      if (!FIXED_TAB_IDS.includes(activeTabId)) {
         closeTab(activeTabId);
       }
-    }
-  });
-
-  // --- Right Panel Divider Drag ---
-
-  const divider = document.getElementById('right-panel-divider');
-  const shellSection = document.getElementById('shell-section');
-
-  let isDragging = false;
-  let rafPending = false;
-
-  divider.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    e.preventDefault();
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    if (rafPending) return; // true single-frame debounce
-
-    rafPending = true;
-    requestAnimationFrame(() => {
-      rafPending = false;
-      const panelRect = rightPanel.getBoundingClientRect();
-      const offset = e.clientY - panelRect.top;
-      const total = panelRect.height;
-      const minHeight = 100;
-
-      if (offset < minHeight || total - offset < minHeight) return;
-
-      const pct = (offset / total) * 100;
-      fileTreeSection.style.flex = `0 0 ${pct}%`;
-
-      if (shellFitAddon) shellFitAddon.fit();
-    });
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (isDragging) {
-      isDragging = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      if (shellFitAddon) shellFitAddon.fit();
     }
   });
 
@@ -1546,26 +2057,56 @@
     if (!items) return;
 
     const imageItem = Array.from(items).find(i => i.type.startsWith('image/'));
-    if (!imageItem) return; // Not an image paste, let xterm handle it
+    if (imageItem) {
+      e.preventDefault();
+      e.stopPropagation();
 
+      const blob = imageItem.getAsFile();
+      if (!blob) return;
+
+      showToast('Uploading image...', 'info', 2000);
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const b64 = reader.result.split(',')[1]; // strip data:image/...;base64, prefix
+        wsSend(JSON.stringify({ type: 'image-upload', sessionId: activeSessionId, data: b64 }));
+      };
+      reader.onerror = () => {
+        showToast('Failed to read image from clipboard', 'error');
+      };
+      reader.readAsDataURL(blob);
+      return;
+    }
+
+    // Text paste is handled by a capture-phase listener on the terminal element
+    // (below) so it can preempt xterm; nothing to do here.
+  });
+
+  // Multi-line text paste into the Claude terminal. xterm converts every newline
+  // in a paste to \r (Enter) and only wraps it in bracketed-paste markers when
+  // the app has that mode ON; if Claude's prompt doesn't have bracketed paste
+  // active at paste time, the newlines submit the prompt line-by-line. When the
+  // mode is OFF and the text is multi-line, wrap it in \x1b[200~…\x1b[201~
+  // ourselves (Claude decodes that as one literal block).
+  //
+  // MUST be capture-phase on the terminal element: xterm binds its own paste
+  // listener on the inner textarea (target phase), so a document/bubble-phase
+  // handler runs too late to preempt it (xterm would already have sent the raw
+  // newlines). Capture on the ancestor fires first; stopPropagation prevents
+  // xterm's listener from also handling it (no double-send).
+  terminalEl.addEventListener('paste', (e) => {
+    if (!activeSessionId || activeTabId !== 'claude' || !term) return;
+    // Images are handled by the document-level handler above.
+    if (e.clipboardData && Array.from(e.clipboardData.items || [])
+      .some((i) => i.type.startsWith('image/'))) return;
+    const text = e.clipboardData ? e.clipboardData.getData('text') : '';
+    if (!text || !text.includes('\n')) return; // single-line paste is harmless
+    if (term.modes && term.modes.bracketedPasteMode) return; // xterm wraps it correctly
     e.preventDefault();
     e.stopPropagation();
-
-    const blob = imageItem.getAsFile();
-    if (!blob) return;
-
-    showToast('Uploading image...', 'info', 2000);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const b64 = reader.result.split(',')[1]; // strip data:image/...;base64, prefix
-      wsSend(JSON.stringify({ type: 'image-upload', sessionId: activeSessionId, data: b64 }));
-    };
-    reader.onerror = () => {
-      showToast('Failed to read image from clipboard', 'error');
-    };
-    reader.readAsDataURL(blob);
-  });
+    const normalized = text.replace(/\r\n/g, '\n');
+    wsSend(JSON.stringify({ type: 'input', data: `\x1b[200~${normalized}\x1b[201~` }));
+  }, { capture: true });
 
   // --- Mobile event listeners ---
   mobileHamburger.addEventListener('click', () => {
@@ -1615,6 +2156,7 @@
   });
 
   // --- Init ---
+  updateScopeToggleLabel();
   initTerminal();
   initShellTerminal();
   connect();

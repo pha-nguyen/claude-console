@@ -9,6 +9,7 @@
 </head>
 <body>
   <div id="app">
+    <div id="connection-banner" class="hidden" role="status" aria-live="polite">Reconnecting…</div>
     <aside id="sidebar" role="navigation" aria-label="Projects" aria-hidden="true">
       <div id="sidebar-header">
         <span class="sidebar-title">Projects</span>
@@ -32,6 +33,27 @@
       <div id="terminal-wrapper">
         <div id="terminal"></div>
       </div>
+      <div id="history-pane" class="pane hidden">
+        <div class="pane-header">
+          <span class="pane-title">History</span>
+          <span id="history-status"></span>
+          <button id="history-refresh" class="pane-btn" title="Refresh">Refresh</button>
+        </div>
+        <div id="history-content"></div>
+      </div>
+      <div id="shell-pane" class="pane hidden">
+        <div id="shell-terminal-wrapper">
+          <div id="shell-terminal"></div>
+        </div>
+      </div>
+      <div id="files-pane" class="pane hidden">
+        <div class="pane-header">
+          <span class="pane-title">Files</span>
+          <button id="files-scope-toggle" class="pane-btn" title="Toggle between this session's worktree and the whole project">Project root</button>
+          <span id="right-panel-path"></span>
+        </div>
+        <div id="file-tree" class="file-tree-container"></div>
+      </div>
       <div id="file-viewer" class="hidden">
         <div id="file-viewer-toolbar">
           <span id="file-viewer-path"></span>
@@ -43,25 +65,6 @@
         <button id="btn-home-add-project" class="home-add-btn">Add Project</button>
       </div>
     </main>
-    <aside id="right-panel" class="hidden">
-      <div id="file-tree-section">
-        <div class="right-panel-header">
-          <span class="right-panel-title">Files</span>
-          <span id="right-panel-path"></span>
-          <button id="btn-toggle-file-tree" class="panel-toggle" title="Collapse file tree">&#x25BC;</button>
-        </div>
-        <div id="file-tree" class="file-tree-container"></div>
-      </div>
-      <div id="right-panel-divider"></div>
-      <div id="shell-section">
-        <div class="right-panel-header">
-          <span class="right-panel-title">Terminal</span>
-        </div>
-        <div id="shell-terminal-wrapper">
-          <div id="shell-terminal"></div>
-        </div>
-      </div>
-    </aside>
   </div>
 
   <!-- Add Project Modal -->

@@ -61,6 +61,15 @@ try {
   browser = await chromium.launch({ headless: true });
   page = await browser.newPage();
 
+  // Capture the app's WebSocket instances so tests can simulate a drop without
+  // adding test-only globals to production code. Runs on every navigation.
+  await page.addInitScript(() => {
+    const OrigWS = window.WebSocket;
+    window.WebSocket = class extends OrigWS {
+      constructor(...args) { super(...args); window.__testWs = this; }
+    };
+  });
+
   console.log('\nUI Smoke Test: File Viewer Feature\n');
   await page.goto(BASE);
   await page.waitForTimeout(1000);
@@ -73,8 +82,10 @@ try {
   check('"Add Project" button visible', !!(await page.$('#btn-home-add-project')));
   check('Tab bar hidden when no session',
     await page.$eval('#tab-bar', el => getComputedStyle(el).display) === 'none');
-  check('Right panel hidden when no session',
-    await page.$eval('#right-panel', el => el.classList.contains('hidden')));
+  check('Shell pane hidden when no session',
+    await page.$eval('#shell-pane', el => el.classList.contains('hidden')));
+  check('Files pane hidden when no session',
+    await page.$eval('#files-pane', el => el.classList.contains('hidden')));
 
   // --- Project + Session Creation ---
   console.log('\nSection: Project + Session Creation');
@@ -113,19 +124,129 @@ try {
     .click({ timeout: 5000 });
   await page.waitForTimeout(1000);
 
-  // --- Right Panel Structure ---
-  console.log('\nSection: Right Panel Structure');
-  check('Right panel visible',
-    await page.$eval('#right-panel', el => !el.classList.contains('hidden')));
-  check('Files header present',
-    await page.$eval('#file-tree-section .right-panel-title', el => el.textContent) === 'Files');
-  check('Collapse toggle exists', !!(await page.$('#btn-toggle-file-tree')));
-  check('Terminal header present',
-    await page.$eval('#shell-section .right-panel-title', el => el.textContent) === 'Terminal');
-  check('Divider exists', !!(await page.$('#right-panel-divider')));
+  // --- Session Row Controls ---
+  console.log('\nSection: Session Row Controls');
+  check('Archive button removed', (await page.$$('.session-archive')).length === 0);
+  check('New-session (+) button in project header',
+    !!(await page.$('.project-header .project-new-session')));
+  check('Bottom "+ New Session" row removed', (await page.$$('.btn-new-session')).length === 0);
 
-  // --- File Tree ---
-  console.log('\nSection: File Tree');
+  // Merge-to-local button present on a session with a worktree branch
+  check('Merge-to-local button present on session',
+    !!(await page.$('.project-sessions.expanded li .session-merge')));
+
+  // New-session (+) in header opens the inline input.
+  // The button is hover-revealed on desktop, so hover the header first.
+  const smokeHeader = page.locator('.project-header:has(.project-name:text-is("Smoke Test"))').first();
+  await smokeHeader.hover();
+  await page.waitForTimeout(150);
+  await smokeHeader.locator('.project-new-session').click();
+  await page.waitForTimeout(400);
+  check('Header + opens inline session input', !!(await page.$('.inline-session-input')));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // Closing a session shows a confirmation dialog (single confirm).
+  // The delete button is hover-revealed, so hover the row first.
+  const smokeSessionLi = page.locator('.project-sessions.expanded li:has-text("Smoke Session")').first();
+  await smokeSessionLi.hover();
+  await page.waitForTimeout(150);
+  await smokeSessionLi.locator('.session-delete').click();
+  await page.waitForTimeout(400);
+  check('Close session shows confirm dialog', !!(await page.$('.confirm-overlay')));
+  check('Confirm dialog titled "Close Session"',
+    (await page.$eval('.confirm-dialog h3', el => el.textContent).catch(() => '')) === 'Close Session');
+  // Escape dismisses the dialog (incidental dismissal path) and keeps session
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  check('Escape dismisses confirm dialog', !(await page.$('.confirm-overlay')));
+  check('Escape keeps the session',
+    !!(await page.$('.project-sessions.expanded li:has-text("Smoke Session")')));
+
+  // Re-open and Cancel via button — session must survive
+  await smokeSessionLi.hover();
+  await page.waitForTimeout(150);
+  await smokeSessionLi.locator('.session-delete').click();
+  await page.waitForTimeout(300);
+  await page.locator('.confirm-cancel').first().click();
+  await page.waitForTimeout(300);
+  check('Cancel keeps the session',
+    !!(await page.$('.project-sessions.expanded li:has-text("Smoke Session")')));
+
+  // --- Session lock (eye) ---
+  console.log('\nSection: Session lock');
+  const smokeLi = page.locator('.project-sessions.expanded li:has-text("Smoke Session")').first();
+  await smokeLi.hover();
+  await page.waitForTimeout(150);
+  check('Lock button present in session row', !!(await smokeLi.locator('.session-lock').count()));
+  await smokeLi.locator('.session-lock').click();
+  await page.waitForTimeout(200);
+  check('Session row gets .locked when locked',
+    await smokeLi.evaluate(el => el.classList.contains('locked')));
+  check('Locked session row is non-interactive (pointer-events:none)',
+    await smokeLi.evaluate(el => getComputedStyle(el).pointerEvents === 'none'));
+  // Lock button itself stays clickable within a locked row
+  await smokeLi.locator('.session-lock').click();
+  await page.waitForTimeout(200);
+  check('Session row un-locked after toggle off',
+    await smokeLi.evaluate(el => !el.classList.contains('locked')));
+
+  // --- Tab Bar (fixed tabs) ---
+  console.log('\nSection: Tab Bar');
+  check('Tab bar visible',
+    await page.$eval('#tab-bar', el => getComputedStyle(el).display) !== 'none');
+  const tabBarText = await page.$eval('#tab-list', el => el.textContent);
+  check('Claude tab present', tabBarText.includes('Claude'));
+  check('History tab present', tabBarText.includes('History'));
+  check('Terminal tab present', tabBarText.includes('Terminal'));
+  check('Files tab present', tabBarText.includes('Files'));
+  // History must come before Terminal in the tab order
+  const tabLabels = await page.$$eval('#tab-list .tab-label', els => els.map(e => e.textContent));
+  check('History tab is before Terminal',
+    tabLabels.indexOf('History') !== -1 &&
+    tabLabels.indexOf('History') < tabLabels.indexOf('Terminal'),
+    JSON.stringify(tabLabels));
+
+  // --- Select-mode toggle ---
+  console.log('\nSection: Select-mode toggle');
+  check('Select-mode toggle present', !!(await page.$('#select-mode-toggle')));
+  check('Select mode defaults OFF (not active)',
+    await page.$eval('#select-mode-toggle', el => !el.classList.contains('active')));
+  check('Toggle label shows Off by default',
+    (await page.$eval('#select-mode-toggle', el => el.textContent)).includes('Off'));
+  await page.locator('#select-mode-toggle').click();
+  await page.waitForTimeout(200);
+  check('Clicking activates Select mode (active class)',
+    await page.$eval('#select-mode-toggle', el => el.classList.contains('active')));
+  await page.locator('#select-mode-toggle').click(); // restore OFF for later sections
+  await page.waitForTimeout(200);
+
+  // --- History Tab ---
+  console.log('\nSection: History Tab');
+  await page.locator('.tab:has-text("History")').first().click();
+  await page.waitForTimeout(600);
+  check('History pane visible on History tab',
+    await page.$eval('#history-pane', el => !el.classList.contains('hidden')));
+  check('History content rendered (empty note or turns)',
+    (await page.$eval('#history-content', el => el.textContent)).length > 0);
+
+  // --- Terminal Tab ---
+  console.log('\nSection: Terminal Tab');
+  await page.locator('.tab:has-text("Terminal")').first().click();
+  await page.waitForTimeout(400);
+  check('Shell pane visible on Terminal tab',
+    await page.$eval('#shell-pane', el => !el.classList.contains('hidden')));
+  check('Claude terminal hidden on Terminal tab',
+    await page.$eval('#terminal-wrapper', el => getComputedStyle(el).display) === 'none');
+
+  // --- Files Tab + File Tree ---
+  console.log('\nSection: Files Tab');
+  await page.locator('.tab:has-text("Files")').first().click();
+  await page.waitForTimeout(400);
+  check('Files pane visible on Files tab',
+    await page.$eval('#files-pane', el => !el.classList.contains('hidden')));
+  check('Files header present',
+    await page.$eval('#files-pane .pane-title', el => el.textContent) === 'Files');
   await page.waitForTimeout(1500);
   const treeItems = await page.$$('.file-tree-item');
   check('File tree has entries', treeItems.length > 0, `found ${treeItems.length}`);
@@ -134,12 +255,20 @@ try {
   check('Shows app.js', treeText.includes('app.js'));
   check('Shows src directory', treeText.includes('src'));
 
-  // --- Tab Bar ---
-  console.log('\nSection: Tab Bar');
-  check('Tab bar visible',
-    await page.$eval('#tab-bar', el => getComputedStyle(el).display) !== 'none');
-  check('Claude tab present',
-    (await page.$eval('#tab-list', el => el.textContent)).includes('Claude'));
+  // Files scope toggle: switch to project root, then back to worktree
+  check('Scope toggle present', !!(await page.$('#files-scope-toggle')));
+  check('Scope toggle starts as "Project root"',
+    (await page.$eval('#files-scope-toggle', el => el.textContent)) === 'Project root');
+  await page.locator('#files-scope-toggle').click();
+  await page.waitForTimeout(1200);
+  check('Scope toggle flips to "Session worktree"',
+    (await page.$eval('#files-scope-toggle', el => el.textContent)) === 'Session worktree');
+  check('Project-root tree still has entries',
+    (await page.$$('.file-tree-item')).length > 0);
+  await page.locator('#files-scope-toggle').click();
+  await page.waitForTimeout(1200);
+  check('Scope toggle returns to "Project root"',
+    (await page.$eval('#files-scope-toggle', el => el.textContent)) === 'Project root');
 
   // --- Markdown Viewer ---
   console.log('\nSection: Markdown Viewer');
@@ -157,6 +286,9 @@ try {
 
   // --- Plain Text Viewer ---
   console.log('\nSection: Plain Text Viewer');
+  // Return to Files tab (opening README switched to its viewer tab)
+  await page.locator('.tab:has-text("Files")').first().click();
+  await page.waitForTimeout(400);
   await page.locator('.file-tree-item:has-text("app.js")').first().click();
   await page.waitForTimeout(1000);
   check('Plain text class',
@@ -213,6 +345,31 @@ try {
   check('Plain Enter sends \\r', enterInputMsgs.length === 1 && enterInputMsgs[0].data === '\r',
     `got: ${JSON.stringify(enterInputMsgs)}`);
 
+  // --- Multi-line paste bracketing (Claude tab) ---
+  // With bracketed-paste mode OFF (testMode bash session hasn't enabled it),
+  // a multi-line text paste must be sent as ONE bracketed block, not multiple
+  // \r Enters. Dispatch a synthetic paste event with multi-line clipboard text.
+  await page.locator('.tab:has-text("Claude")').first().click();
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { window.__wsSent = []; });
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.setData('text', 'line1\nline2\nline3');
+    const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+    // Dispatch on the terminal element so the capture-phase paste listener
+    // (which preempts xterm) receives it, matching a real in-terminal paste.
+    document.getElementById('terminal').dispatchEvent(ev);
+  });
+  await page.waitForTimeout(200);
+  const pasteMsgs = (await page.evaluate(() => window.__wsSent))
+    .map(m => { try { return JSON.parse(m); } catch { return null; } })
+    .filter(m => m && m.type === 'input');
+  const bracketed = pasteMsgs.find(m => m.data.includes('\x1b[200~') && m.data.includes('\x1b[201~'));
+  check('Multi-line paste sent as one bracketed block', !!bracketed,
+    `got: ${JSON.stringify(pasteMsgs)}`);
+  check('Bracketed paste preserves newlines (no bare \\r submits)',
+    !!bracketed && bracketed.data.includes('line1\nline2\nline3'));
+
   // --- Tab Close ---
   console.log('\nSection: Tab Close');
   const tabsBefore = (await page.$$('.tab')).length;
@@ -221,18 +378,13 @@ try {
     await closeBtn.click();
     await page.waitForTimeout(300);
     check('Close button removes tab', (await page.$$('.tab')).length < tabsBefore);
+    // Closing the last file tab returns to Files, not the Claude terminal.
+    const noFileTabs = (await page.$$('.tab-close')).length === 0;
+    if (noFileTabs) {
+      check('Closing last file tab returns to Files pane',
+        await page.$eval('#files-pane', el => !el.classList.contains('hidden')));
+    }
   }
-
-  // --- File Tree Collapse ---
-  console.log('\nSection: File Tree Collapse');
-  await page.$('#btn-toggle-file-tree').then(btn => btn.click());
-  await page.waitForTimeout(300);
-  check('Collapses on toggle',
-    await page.$eval('#file-tree-section', el => el.classList.contains('collapsed')));
-  await page.$('#btn-toggle-file-tree').then(btn => btn.click());
-  await page.waitForTimeout(300);
-  check('Expands on second toggle',
-    await page.$eval('#file-tree-section', el => !el.classList.contains('collapsed')));
 
   // --- Mobile Layout ---
   console.log('\nSection: Mobile Layout');
@@ -244,8 +396,10 @@ try {
   // Core layout checks
   check('Mobile topbar visible',
     await page.$eval('#mobile-topbar', el => getComputedStyle(el).display) === 'flex');
-  check('Right panel hidden on mobile',
-    await page.$eval('#right-panel', el => getComputedStyle(el).display) === 'none');
+  check('Shell pane hidden on mobile',
+    await page.$eval('#shell-pane', el => getComputedStyle(el).display) === 'none');
+  check('Files pane hidden on mobile',
+    await page.$eval('#files-pane', el => getComputedStyle(el).display) === 'none');
   check('Tab bar hidden on mobile',
     await page.$eval('#tab-bar', el => getComputedStyle(el).display) === 'none');
   check('Sidebar is fixed-position on mobile',
@@ -281,12 +435,14 @@ try {
   check('Sidebar closes on backdrop click',
     await page.$eval('#sidebar', el => !el.classList.contains('open')));
 
-  // Test session click closes sidebar
+  // Test session click closes sidebar. Click the status dot (leftmost, always
+  // present, no own handler → event bubbles to the row's onclick), avoiding the
+  // right-side action buttons that stopPropagation.
   await page.click('#mobile-hamburger');
   await page.waitForTimeout(500);
-  const sessionLi = await page.$('.project-sessions li');
-  if (sessionLi) {
-    await sessionLi.click();
+  const sessionDot = await page.$('.project-sessions li .status-dot');
+  if (sessionDot) {
+    await sessionDot.click();
     await page.waitForTimeout(500);
     check('Session click closes sidebar',
       await page.$eval('#sidebar', el => !el.classList.contains('open')));
@@ -357,8 +513,6 @@ try {
   // Restore desktop viewport and verify layout restoration
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForTimeout(1000);
-  check('Right panel visible after restore',
-    await page.$eval('#right-panel', el => getComputedStyle(el).display) !== 'none');
   check('Tab bar visible after restore',
     await page.$eval('#tab-bar', el => getComputedStyle(el).display) !== 'none');
   check('Mobile topbar hidden after restore',
@@ -370,11 +524,40 @@ try {
 
   // --- Directory Expand ---
   console.log('\nSection: Directory Expand');
+  // Ensure the Files tab is active so the tree is visible
+  await page.locator('.tab:has-text("Files")').first().click();
+  await page.waitForTimeout(400);
   await page.locator('.file-tree-folder:has-text("src")').first().click();
   await page.waitForTimeout(1000);
   check('src expands', !!(await page.$('.file-tree-children.expanded')));
   const childText = await page.$eval('.file-tree-children.expanded', el => el.textContent).catch(() => '');
   check('Shows index.js', childText.includes('index.js'));
+
+  // --- Auto-select last session on refresh ---
+  console.log('\nSection: Auto-select on Refresh');
+  // We attached "Smoke Session" earlier, so it should be persisted. Reload.
+  await page.reload();
+  await page.waitForTimeout(2500);
+  check('Session auto-selected after refresh (welcome screen hidden)',
+    await page.$eval('#no-session', el => el.classList.contains('hidden')));
+  check('Tab bar visible after refresh (a session is active)',
+    await page.$eval('#tab-bar', el => getComputedStyle(el).display) !== 'none');
+
+  // --- Connection banner on WS drop ---
+  console.log('\nSection: Connection Banner');
+  check('Banner hidden while connected',
+    await page.$eval('#connection-banner', el => el.classList.contains('hidden')));
+  // Force-close the client WebSocket and confirm the reconnecting UI appears.
+  await page.evaluate(() => { if (window.__testWs) window.__testWs.close(); });
+  await page.waitForTimeout(400);
+  const bannerShown = await page.$eval('#connection-banner', el => !el.classList.contains('hidden'));
+  const bodyDisconnected = await page.$eval('body', el => el.classList.contains('ws-disconnected'));
+  check('Banner shown after WS close', bannerShown);
+  check('Body marked ws-disconnected after WS close', bodyDisconnected);
+  // It should auto-reconnect and clear the banner.
+  await page.waitForTimeout(2500);
+  check('Banner clears after auto-reconnect',
+    await page.$eval('#connection-banner', el => el.classList.contains('hidden')));
 
   // Summary
   console.log(`\n${'='.repeat(40)}`);

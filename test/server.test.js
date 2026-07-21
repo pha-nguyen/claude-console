@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { createServer } from '../server.js';
+import { createServer, getBrowseRoots, isWithinBrowseRoots, getAllowedOriginHosts, parseTranscript, encodeClaudeProjectDir, snapshotTranscripts, detectActiveTranscript, parseRunningAgentIds } from '../server.js';
 
 const gitEnv = {
   GIT_AUTHOR_NAME: 'Test',
@@ -477,6 +477,48 @@ describe('Worktree Session Lifecycle', () => {
     const data = await res.json();
     assert.strictEqual(data.ok, true);
   });
+
+  it('DELETE project refuses when a session worktree is dirty (no force)', async () => {
+    // Use a dedicated project so we don't disturb the shared one.
+    const p = await (await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'proj-dirty-guard', cwd: tempDir }),
+    })).json();
+    const session = await (await fetch(`${baseUrl}/api/projects/${p.id}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Project Dirty Guard' }),
+    })).json();
+    fs.writeFileSync(path.join(tempDir, session.worktreePath, 'uncommitted.txt'), 'wip');
+
+    const res = await fetch(`${baseUrl}/api/projects/${p.id}`, { method: 'DELETE' });
+    assert.strictEqual(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.code, 'DIRTY_WORKTREE');
+    assert.ok(Array.isArray(data.sessions) && data.sessions.includes('Project Dirty Guard'));
+
+    const list = await (await fetch(`${baseUrl}/api/projects`)).json();
+    assert.ok(list.projects.find((x) => x.id === p.id), 'project should survive refused delete');
+
+    // Force-clean the dedicated project for teardown.
+    await fetch(`${baseUrl}/api/projects/${p.id}?force=true`, { method: 'DELETE' });
+  });
+
+  it('DELETE project with force=true removes even dirty sessions', async () => {
+    const p = await (await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'proj-force-delete', cwd: tempDir }),
+    })).json();
+    const session = await (await fetch(`${baseUrl}/api/projects/${p.id}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Project Force Delete' }),
+    })).json();
+    fs.writeFileSync(path.join(tempDir, session.worktreePath, 'uncommitted.txt'), 'wip');
+
+    const res = await fetch(`${baseUrl}/api/projects/${p.id}?force=true`, { method: 'DELETE' });
+    assert.strictEqual(res.status, 200);
+    const list = await (await fetch(`${baseUrl}/api/projects`)).json();
+    assert.ok(!list.projects.find((x) => x.id === p.id), 'project should be gone after force delete');
+  });
 });
 
 describe('Worktree Integration - Full Lifecycle', () => {
@@ -552,7 +594,7 @@ describe('Worktree Integration - Full Lifecycle', () => {
     assert.ok(!sessions.find((s) => s.id === session.id), 'session should be removed from list');
   });
 
-  it('delete removes both worktree and branch', async () => {
+  it('delete removes the worktree but preserves the branch for recovery', async () => {
     // Create project
     const projRes = await fetch(`${baseUrl}/api/projects`, {
       method: 'POST',
@@ -587,14 +629,87 @@ describe('Worktree Integration - Full Lifecycle', () => {
     // Verify worktree is gone
     assert.ok(!fs.existsSync(worktreePath), 'worktree should be removed after delete');
 
-    // Verify branch is also gone
+    // Branch is PRESERVED (deleteBranch:false): the dirty check only catches
+    // uncommitted changes, so force-deleting the branch could silently orphan
+    // committed-but-unmerged commits. The claude/<branch> ref stays recoverable.
     branches = execSync('git branch', { cwd: tempDir, encoding: 'utf-8' });
-    assert.ok(!branches.includes(fullBranchName), 'branch should be removed after delete');
+    assert.ok(branches.includes(fullBranchName), 'branch should be preserved after delete');
 
     // Verify session is removed from API
     const listRes = await fetch(`${baseUrl}/api/projects`);
     const { sessions } = await listRes.json();
     assert.ok(!sessions.find((s) => s.id === session.id), 'session should be removed from list');
+  });
+});
+
+describe('Merge session to local', () => {
+  let server;
+  let baseUrl;
+  let tempDir;
+
+  before(async () => {
+    server = createServer({ testMode: true });
+    await new Promise((resolve) => server.listen(0, resolve));
+    baseUrl = `http://localhost:${server.address().port}`;
+    // Repo with a real committed base on 'main' and .worktrees gitignored.
+    tempDir = createTempDir();
+    execSync('git init -q -b main && printf ".worktrees/\\n" > .gitignore && echo base > base.txt && git add -A && git commit -qm init', {
+      cwd: tempDir, env: { ...process.env, ...gitEnv },
+    });
+  });
+
+  after(async () => {
+    await server.destroy();
+    if (tempDir) cleanupDir(tempDir);
+  });
+
+  async function makeSession(name) {
+    const project = await (await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `merge-${name}`, cwd: tempDir }),
+    })).json();
+    const session = await (await fetch(`${baseUrl}/api/projects/${project.id}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })).json();
+    return { project, session };
+  }
+
+  it('auto-commits and fast-forwards session changes into the local branch', async () => {
+    const { session } = await makeSession('feat-merge');
+    // Uncommitted new file in the session worktree
+    fs.writeFileSync(path.join(tempDir, session.worktreePath, 'session-file.txt'), 'from session');
+
+    const res = await fetch(`${baseUrl}/api/sessions/${session.id}/merge`, { method: 'POST' });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.committed, true, 'should auto-commit pending work');
+    assert.ok(data.merged, 'should report merged');
+
+    // The file now exists at the project root (local checkout)
+    assert.ok(fs.existsSync(path.join(tempDir, 'session-file.txt')),
+      'merged file should appear in the project root');
+  });
+
+  it('aborts cleanly and reports conflict when branches diverge', async () => {
+    const { session } = await makeSession('feat-conflict');
+    const wt = path.join(tempDir, session.worktreePath);
+    // Session edits base.txt and commits
+    fs.writeFileSync(path.join(wt, 'base.txt'), 'session version');
+    execSync('git add -A && git commit -qm s', { cwd: wt, env: { ...process.env, ...gitEnv } });
+    // Local (root) edits base.txt differently and commits
+    fs.writeFileSync(path.join(tempDir, 'base.txt'), 'local version');
+    execSync('git add -A && git commit -qm local', { cwd: tempDir, env: { ...process.env, ...gitEnv } });
+
+    const res = await fetch(`${baseUrl}/api/sessions/${session.id}/merge`, { method: 'POST' });
+    assert.strictEqual(res.status, 409);
+    const data = await res.json();
+    assert.strictEqual(data.code, 'MERGE_CONFLICT');
+
+    // Working tree must be clean after the aborted merge
+    const status = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+    assert.strictEqual(status.trim(), '', 'tree should be clean after aborted merge');
   });
 });
 
@@ -720,6 +835,34 @@ describe('Shell WebSocket', () => {
     assert.strictEqual(replayDone.sessionId, sessionId);
 
     ws.close();
+  });
+
+  it('concurrent shell-attach for same session does not crash the server', async () => {
+    const { WebSocket } = await import('ws');
+
+    // Open two sockets and fire shell-attach for the SAME session near-simultaneously.
+    // Previously the second attach raced past the isShellAlive() check and threw
+    // "Shell already exists" from spawnShell(), an unhandled error that killed the
+    // whole process. The server must survive and stay responsive.
+    const mkAttach = async () => {
+      const ws = new WebSocket(wsUrl);
+      await new Promise((resolve) => ws.on('open', resolve));
+      await new Promise((resolve) => ws.once('message', resolve)); // skip state
+      ws.send(JSON.stringify({ type: 'shell-attach', sessionId, cols: 80, rows: 24 }));
+      return ws;
+    };
+
+    const [ws1, ws2] = await Promise.all([mkAttach(), mkAttach()]);
+
+    // Give the handlers time to process both attaches.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Server still alive and serving requests?
+    const health = await fetch(`${baseUrl}/api/health`);
+    assert.strictEqual(health.status, 200, 'server should survive concurrent shell-attach');
+
+    ws1.close();
+    ws2.close();
   });
 
   it('shell-input sends data and shell-output is received', async () => {
@@ -862,5 +1005,282 @@ describe('Health endpoint', () => {
     assert.strictEqual(typeof data.sessions, 'number');
     assert.strictEqual(typeof data.uptime, 'number');
     assert.ok(data.uptime >= 0);
+  });
+});
+
+describe('Browse roots allowlist', () => {
+  const sep = path.sep;
+  const home = os.homedir();
+
+  it('always includes the home directory', () => {
+    const saved = process.env.BROWSE_ROOTS;
+    delete process.env.BROWSE_ROOTS;
+    try {
+      assert.deepStrictEqual(getBrowseRoots(), [home]);
+    } finally {
+      if (saved !== undefined) process.env.BROWSE_ROOTS = saved;
+    }
+  });
+
+  it('adds configured roots from BROWSE_ROOTS (realpath-resolved)', () => {
+    const saved = process.env.BROWSE_ROOTS;
+    // os.tmpdir() exists on all platforms; realpath it to compare against output.
+    const tmpReal = fs.realpathSync(os.tmpdir());
+    process.env.BROWSE_ROOTS = os.tmpdir();
+    try {
+      const roots = getBrowseRoots();
+      assert.ok(roots.includes(home));
+      assert.ok(roots.includes(tmpReal));
+    } finally {
+      if (saved === undefined) delete process.env.BROWSE_ROOTS;
+      else process.env.BROWSE_ROOTS = saved;
+    }
+  });
+
+  it('skips non-existent BROWSE_ROOTS entries', () => {
+    const saved = process.env.BROWSE_ROOTS;
+    process.env.BROWSE_ROOTS = '/definitely/not/a/real/path/xyz';
+    try {
+      assert.deepStrictEqual(getBrowseRoots(), [home]);
+    } finally {
+      if (saved === undefined) delete process.env.BROWSE_ROOTS;
+      else process.env.BROWSE_ROOTS = saved;
+    }
+  });
+
+  it('isWithinBrowseRoots matches the root itself and descendants', () => {
+    const roots = [`${sep}home${sep}me`, `${sep}workplace${sep}me`];
+    assert.ok(isWithinBrowseRoots(`${sep}home${sep}me`, roots));
+    assert.ok(isWithinBrowseRoots(`${sep}workplace${sep}me${sep}proj`, roots));
+  });
+
+  it('isWithinBrowseRoots rejects paths outside all roots and prefix-bypass attempts', () => {
+    const roots = [`${sep}home${sep}me`];
+    assert.ok(!isWithinBrowseRoots(`${sep}etc`, roots));
+    // Prefix bypass: /home/me2 must not match root /home/me
+    assert.ok(!isWithinBrowseRoots(`${sep}home${sep}me2`, roots));
+  });
+});
+
+describe('Directory browser symlink handling', () => {
+  let server;
+  let baseUrl;
+  let scratchDir;
+
+  before(async () => {
+    // Must live under home so the top-level /api/browse picker allows it.
+    scratchDir = fs.mkdtempSync(path.join(os.homedir(), '.console-symlink-test-'));
+    fs.mkdirSync(path.join(scratchDir, 'realdir'));
+    fs.symlinkSync(path.join(scratchDir, 'realdir'), path.join(scratchDir, 'linkdir'), 'dir');
+    fs.writeFileSync(path.join(scratchDir, 'plainfile'), 'x');
+    fs.symlinkSync(path.join(scratchDir, 'plainfile'), path.join(scratchDir, 'linkfile'), 'file');
+    fs.symlinkSync(path.join(scratchDir, 'nope'), path.join(scratchDir, 'brokenlink'), 'dir');
+
+    server = createServer({ testMode: true });
+    await new Promise((resolve) => server.listen(0, resolve));
+    baseUrl = `http://localhost:${server.address().port}`;
+  });
+
+  after(async () => {
+    await server.destroy();
+    cleanupDir(scratchDir);
+  });
+
+  it('lists directory symlinks as directories, excludes file/broken symlinks', async () => {
+    const res = await fetch(`${baseUrl}/api/browse?path=${encodeURIComponent(scratchDir)}`);
+    assert.strictEqual(res.status, 200);
+    const { dirs } = await res.json();
+    assert.ok(dirs.includes('realdir'), 'real directory listed');
+    assert.ok(dirs.includes('linkdir'), 'symlink to directory listed');
+    assert.ok(!dirs.includes('linkfile'), 'symlink to file not listed as dir');
+    assert.ok(!dirs.includes('brokenlink'), 'broken symlink not listed');
+  });
+
+  it('can navigate into a directory symlink', async () => {
+    const res = await fetch(`${baseUrl}/api/browse?path=${encodeURIComponent(path.join(scratchDir, 'linkdir'))}`);
+    assert.strictEqual(res.status, 200);
+  });
+});
+
+describe('parseTranscript', () => {
+  it('parses string user turns and array assistant turns', () => {
+    const raw = [
+      JSON.stringify({ type: 'user', timestamp: 't1', message: { role: 'user', content: 'Hello' } }),
+      JSON.stringify({ type: 'assistant', timestamp: 't2', message: { role: 'assistant', content: [{ type: 'text', text: 'Hi there' }] } }),
+    ].join('\n');
+    const turns = parseTranscript(raw);
+    assert.strictEqual(turns.length, 2);
+    assert.strictEqual(turns[0].role, 'user');
+    assert.deepStrictEqual(turns[0].parts, [{ kind: 'text', text: 'Hello' }]);
+    assert.strictEqual(turns[1].role, 'assistant');
+    assert.strictEqual(turns[1].parts[0].text, 'Hi there');
+  });
+
+  it('extracts tool_use and tool_result blocks', () => {
+    const raw = [
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [
+        { type: 'text', text: 'Running' },
+        { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+      ] } }),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: [
+        { type: 'tool_result', content: 'file1\nfile2', is_error: false },
+      ] } }),
+    ].join('\n');
+    const turns = parseTranscript(raw);
+    assert.strictEqual(turns.length, 2);
+    const toolUse = turns[0].parts.find(p => p.kind === 'tool_use');
+    assert.ok(toolUse);
+    assert.strictEqual(toolUse.name, 'Bash');
+    assert.deepStrictEqual(toolUse.input, { command: 'ls' });
+    const toolResult = turns[1].parts.find(p => p.kind === 'tool_result');
+    assert.ok(toolResult);
+    assert.strictEqual(toolResult.text, 'file1\nfile2');
+    assert.strictEqual(toolResult.isError, false);
+  });
+
+  it('flattens array-form tool_result content and flags errors', () => {
+    const raw = JSON.stringify({ type: 'user', message: { role: 'user', content: [
+      { type: 'tool_result', content: [{ type: 'text', text: 'boom' }], is_error: true },
+    ] } });
+    const turns = parseTranscript(raw);
+    assert.strictEqual(turns.length, 1);
+    assert.strictEqual(turns[0].parts[0].text, 'boom');
+    assert.strictEqual(turns[0].parts[0].isError, true);
+  });
+
+  it('ignores snapshots, system entries, blank lines, and malformed JSON', () => {
+    const raw = [
+      '',
+      'not json',
+      JSON.stringify({ type: 'file-history-snapshot', foo: 1 }),
+      JSON.stringify({ type: 'system', message: { role: 'system', content: 'x' } }),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'kept' } }),
+    ].join('\n');
+    const turns = parseTranscript(raw);
+    assert.strictEqual(turns.length, 1);
+    assert.strictEqual(turns[0].parts[0].text, 'kept');
+  });
+
+  it('drops turns with no renderable parts (e.g. empty content)', () => {
+    const raw = [
+      JSON.stringify({ type: 'user', message: { role: 'user', content: '   ' } }),
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [] } }),
+    ].join('\n');
+    assert.strictEqual(parseTranscript(raw).length, 0);
+  });
+
+  it('does not throw on null/non-object content blocks', () => {
+    const raw = [
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [null, 'str', { type: 'text', text: 'ok' }] } }),
+    ].join('\n');
+    // Must not throw (null/string blocks skipped) and still keep the valid text.
+    const turns = parseTranscript(raw);
+    assert.strictEqual(turns.length, 1);
+    assert.deepStrictEqual(turns[0].parts, [{ kind: 'text', text: 'ok' }]);
+  });
+});
+
+describe('Transcript capture helpers', () => {
+  it('encodeClaudeProjectDir replaces / and . with -', () => {
+    assert.strictEqual(
+      encodeClaudeProjectDir('/workplace/me/proj/.worktrees/feat-1'),
+      '-workplace-me-proj--worktrees-feat-1'
+    );
+  });
+
+  it('detectActiveTranscript prefers a brand-new file', () => {
+    const before = { 'a.jsonl': { mtimeMs: 100, size: 10 } };
+    const after = {
+      'a.jsonl': { mtimeMs: 100, size: 10 },
+      'b.jsonl': { mtimeMs: 200, size: 5 },
+    };
+    assert.strictEqual(detectActiveTranscript(before, after), 'b.jsonl');
+  });
+
+  it('detectActiveTranscript picks the most-grown file when no new file (resumed convo)', () => {
+    const before = {
+      'a.jsonl': { mtimeMs: 100, size: 1000 },
+      'b.jsonl': { mtimeMs: 100, size: 1000 },
+    };
+    const after = {
+      'a.jsonl': { mtimeMs: 150, size: 1005 },   // grew 5
+      'b.jsonl': { mtimeMs: 160, size: 3000 },   // grew 2000 (resumed here)
+    };
+    assert.strictEqual(detectActiveTranscript(before, after), 'b.jsonl');
+  });
+
+  it('detectActiveTranscript returns null when nothing changed', () => {
+    const snap = { 'a.jsonl': { mtimeMs: 100, size: 1000 } };
+    assert.strictEqual(detectActiveTranscript(snap, { ...snap }), null);
+  });
+
+  it('snapshotTranscripts returns {} for a missing directory', () => {
+    assert.deepStrictEqual(snapshotTranscripts(fs, '/no/such/dir/xyz'), {});
+  });
+
+  it('parseRunningAgentIds extracts sessionIds from claude agents --json', () => {
+    const json = JSON.stringify([
+      { id: 'a1', sessionId: '83137cc2-5b41-4beb-8ea1-f932f03d8f1f', status: 'busy' },
+      { id: 'b2', sessionId: 'd6e2a28b-d83a-4c1a-9849-78594396665d', status: 'idle' },
+      { id: 'c3' }, // no sessionId — ignored
+    ]);
+    const ids = parseRunningAgentIds(json);
+    assert.ok(ids.has('83137cc2-5b41-4beb-8ea1-f932f03d8f1f'));
+    assert.ok(ids.has('d6e2a28b-d83a-4c1a-9849-78594396665d'));
+    assert.strictEqual(ids.size, 2);
+  });
+
+  it('parseRunningAgentIds returns empty Set on malformed or non-array input', () => {
+    assert.strictEqual(parseRunningAgentIds('not json').size, 0);
+    assert.strictEqual(parseRunningAgentIds('{"a":1}').size, 0);
+    assert.strictEqual(parseRunningAgentIds('').size, 0);
+  });
+
+  it('snapshotTranscripts captures size and mtime for real files', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snap-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'x.jsonl'), 'hello');
+      fs.writeFileSync(path.join(dir, 'ignore.txt'), 'nope');
+      const snap = snapshotTranscripts(fs, dir);
+      assert.ok('x.jsonl' in snap);
+      assert.strictEqual(snap['x.jsonl'].size, 5);
+      assert.ok(!('ignore.txt' in snap), 'only .jsonl files are snapshotted');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Allowed origin hosts allowlist', () => {
+  it('returns empty when ALLOWED_ORIGINS is unset', () => {
+    const saved = process.env.ALLOWED_ORIGINS;
+    delete process.env.ALLOWED_ORIGINS;
+    try {
+      assert.deepStrictEqual(getAllowedOriginHosts(), []);
+    } finally {
+      if (saved !== undefined) process.env.ALLOWED_ORIGINS = saved;
+    }
+  });
+
+  it('parses full origin URLs down to hostnames', () => {
+    const saved = process.env.ALLOWED_ORIGINS;
+    process.env.ALLOWED_ORIGINS = 'https://console.example.ts.net:8443';
+    try {
+      assert.deepStrictEqual(getAllowedOriginHosts(), ['console.example.ts.net']);
+    } finally {
+      if (saved === undefined) delete process.env.ALLOWED_ORIGINS;
+      else process.env.ALLOWED_ORIGINS = saved;
+    }
+  });
+
+  it('accepts bare hostnames and comma-separated lists (lowercased)', () => {
+    const saved = process.env.ALLOWED_ORIGINS;
+    process.env.ALLOWED_ORIGINS = 'Foo.trycloudflare.com, https://bar.ts.net';
+    try {
+      assert.deepStrictEqual(getAllowedOriginHosts(), ['foo.trycloudflare.com', 'bar.ts.net']);
+    } finally {
+      if (saved === undefined) delete process.env.ALLOWED_ORIGINS;
+      else process.env.ALLOWED_ORIGINS = saved;
+    }
   });
 });

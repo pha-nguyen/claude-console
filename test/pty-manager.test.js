@@ -139,6 +139,16 @@ describe('buildSpawnCommand', () => {
     assert.strictEqual(result.command, '/bin/bash');
     assert.deepStrictEqual(result.cmdArgs, []);
   });
+
+  it('resume with fork adds --fork-session', () => {
+    const result = buildSpawnCommand({ resumeId: 'abc-123', fork: true });
+    assert.deepStrictEqual(result.cmdArgs, ['--resume', 'abc-123', '--fork-session', '--dangerously-skip-permissions']);
+  });
+
+  it('fork without a resumeId does NOT add --fork-session (nothing to fork)', () => {
+    const result = buildSpawnCommand({ fork: true });
+    assert.deepStrictEqual(result.cmdArgs, ['--dangerously-skip-permissions']);
+  });
 });
 
 describe('PtyManager shell processes', () => {

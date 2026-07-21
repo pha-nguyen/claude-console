@@ -73,6 +73,24 @@ Click any file in the right-panel tree to open it in a tab. Markdown files are r
 
 Claude Console serves your filesystem contents through its API. **It binds to 127.0.0.1 only** and must not be exposed to the network. Do not put it behind a reverse proxy or bind it to 0.0.0.0.
 
+The directory browser (`/api/browse`) only serves paths under your home directory. To allow browsing additional roots — for example a `~/workplace` symlink that points outside home — set `BROWSE_ROOTS` to a `PATH`-style, delimiter-separated list of directories:
+
+```
+BROWSE_ROOTS=/workplace/me:/data npm start
+```
+
+Each entry is resolved through `realpath`, so symlinked roots still match. Only add roots you intend to expose through the browser.
+
+### Accessing through a tunnel or reverse proxy
+
+WebSocket and `/api` requests are restricted by browser `Origin`: only `localhost`, `127.0.0.1`, and Tailscale `100.x.x.x` addresses are allowed by default. When you reach the console through a tunnel (e.g. Cloudflare Tunnel, a `*.ts.net` HTTPS name, or any reverse proxy), the browser sends that hostname as the origin and the handshake is rejected with **401 Unauthorized** (WebSocket) or **403 Forbidden** (`/api`).
+
+Allowlist the extra origin(s) with `ALLOWED_ORIGINS` (comma-separated; scheme/port optional):
+
+```
+ALLOWED_ORIGINS=https://console.example.ts.net,https://foo.trycloudflare.com npm start
+```
+
 ## Development
 
 ### Project Structure

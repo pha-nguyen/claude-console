@@ -68,6 +68,29 @@ export function createStore(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
   `);
 
+  // --- Schema migrations ---
+  // The base tables above establish the v1 schema for fresh databases. Existing
+  // databases created before a column was added won't get it from CREATE TABLE
+  // IF NOT EXISTS, so evolve them here, keyed on PRAGMA user_version. To add a
+  // future migration: append a step that runs when version < N and bump to N.
+  const migrations = [
+    // Example (leave commented until needed):
+    // { version: 2, up: (d) => d.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0') },
+  ];
+  const runMigrations = db.transaction(() => {
+    let version = db.pragma('user_version', { simple: true });
+    for (const m of migrations) {
+      if (version < m.version) {
+        m.up(db);
+        version = m.version;
+      }
+    }
+    // Baseline: a fresh DB (or one predating versioning) is at least v1.
+    if (version < 1) version = 1;
+    db.pragma(`user_version = ${version}`);
+  });
+  runMigrations();
+
   // Prepared statements
   const stmts = {
     getProjects: db.prepare('SELECT * FROM projects ORDER BY created_at ASC'),
@@ -81,7 +104,9 @@ export function createStore(dbPath) {
     insertSession: db.prepare(
       'INSERT INTO sessions (id, project_id, name, branch_name, worktree_path, claude_session_id, status, created_at) VALUES (@id, @projectId, @name, @branchName, @worktreePath, @claudeSessionId, @status, @createdAt)'
     ),
-    updateSession: db.prepare('UPDATE sessions SET status = @status, claude_session_id = @claudeSessionId WHERE id = @id'),
+    updateSession: db.prepare(
+      'UPDATE sessions SET name = @name, branch_name = @branchName, worktree_path = @worktreePath, claude_session_id = @claudeSessionId, status = @status WHERE id = @id'
+    ),
     deleteSession: db.prepare('DELETE FROM sessions WHERE id = ?'),
     getSessionWorktreePaths: db.prepare(
       'SELECT worktree_path FROM sessions WHERE project_id = ? AND worktree_path IS NOT NULL'
@@ -134,10 +159,18 @@ export function createStore(dbPath) {
     updateSession(id, fields) {
       const current = this.getSession(id);
       if (!current) return undefined;
+      // Persist every updatable column. Use `in fields` (not ??) so an explicit
+      // null clears a value, while an omitted field keeps the current one.
+      // Previously only status/claudeSessionId were written and any other field
+      // (name, branchName, worktreePath) passed by a caller was silently dropped.
+      const pick = (key) => (key in fields ? fields[key] : current[key]);
       stmts.updateSession.run({
         id,
-        status: fields.status ?? current.status,
-        claudeSessionId: fields.claudeSessionId !== undefined ? fields.claudeSessionId : current.claudeSessionId,
+        name: pick('name'),
+        branchName: pick('branchName'),
+        worktreePath: pick('worktreePath'),
+        claudeSessionId: pick('claudeSessionId'),
+        status: pick('status'),
       });
       return this.getSession(id);
     },
