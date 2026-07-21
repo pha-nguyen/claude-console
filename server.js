@@ -31,6 +31,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAX_NAME_LENGTH = 100;
 const MAX_CWD_LENGTH = 1024;
 
+// Worktrees are ON unless WORKTREES is off/0/false/no. When OFF, sessions do NOT
+// get an isolated git worktree: Claude and the shell both run in the project
+// root and there's a single file scope. Sessions are stored with
+// branchName/worktreePath = null, which every worktree-aware path already
+// treats as "use the project cwd". Exported for testing.
+export function worktreesEnabledFromEnv(env = process.env) {
+  return !/^(off|0|false|no)$/i.test(env.WORKTREES || '');
+}
+
 /**
  * Parse extra allowed WebSocket/API origins from the ALLOWED_ORIGINS env var
  * (comma-separated). Used to permit access through a tunnel or reverse proxy
@@ -327,9 +336,15 @@ function validateHooksConfig({ strict = false } = {}) {
   }
 }
 
-export function createServer({ testMode = false } = {}) {
+export function createServer({ testMode = false, worktreesEnabled } = {}) {
   const app = express();
   const server = http.createServer(app);
+
+  // Whether sessions get isolated git worktrees. Defaults to the WORKTREES env
+  // var; an explicit option overrides it (used by tests).
+  const WORKTREES_ENABLED = worktreesEnabled !== undefined
+    ? worktreesEnabled
+    : worktreesEnabledFromEnv();
 
   function isAllowedOrigin(origin) {
     if (!origin) return true; // No Origin header (e.g., non-browser clients)
@@ -697,6 +712,7 @@ export function createServer({ testMode = false } = {}) {
     const { projects, sessions } = store.getAll();
     const msg = JSON.stringify({
       type: 'state',
+      worktreesEnabled: WORKTREES_ENABLED,
       projects,
       sessions: sessions.map((s) => ({
         ...s,
@@ -988,26 +1004,32 @@ export function createServer({ testMode = false } = {}) {
     }
 
     const sessionId = crypto.randomUUID();
-    const branchName = `${sanitizeBranchName(name)}-${sessionId.slice(0, 7)}`;
-    const worktreePath = `.worktrees/${branchName}`;
-
-    try {
-      await createWorktree(project.cwd, branchName, project.id);
-    } catch (e) {
-      return res.status(400).json({
-        error: e.message,
-        code: e.code || 'WORKTREE_FAILED',
-      });
-    }
-
+    // No-worktree mode: run directly in the project root (no branch/worktree).
+    let branchName = null;
+    let worktreePath = null;
     let worktreeWarning = null;
-    try {
-      const isIgnored = await isWorktreesIgnored(project.cwd);
-      if (!isIgnored) {
-        worktreeWarning = 'Warning: .worktrees/ is not in .gitignore. Add it to avoid committing worktree files.';
+
+    if (WORKTREES_ENABLED) {
+      branchName = `${sanitizeBranchName(name)}-${sessionId.slice(0, 7)}`;
+      worktreePath = `.worktrees/${branchName}`;
+
+      try {
+        await createWorktree(project.cwd, branchName, project.id);
+      } catch (e) {
+        return res.status(400).json({
+          error: e.message,
+          code: e.code || 'WORKTREE_FAILED',
+        });
       }
-    } catch {
-      // Ignore check errors
+
+      try {
+        const isIgnored = await isWorktreesIgnored(project.cwd);
+        if (!isIgnored) {
+          worktreeWarning = 'Warning: .worktrees/ is not in .gitignore. Add it to avoid committing worktree files.';
+        }
+      } catch {
+        // Ignore check errors
+      }
     }
 
     const session = store.createSession({
@@ -1024,10 +1046,12 @@ export function createServer({ testMode = false } = {}) {
     try {
       await spawnSession(session);
     } catch (e) {
-      try {
-        await removeWorktree(project.cwd, branchName, project.id, { deleteBranch: true });
-      } catch {
-        // Ignore cleanup errors
+      if (branchName) {
+        try {
+          await removeWorktree(project.cwd, branchName, project.id, { deleteBranch: true });
+        } catch {
+          // Ignore cleanup errors
+        }
       }
       store.deleteSession(session.id);
       if (e.code === 'INVALID_WORKTREE_PATH' || e.code === 'PATH_SAFETY_VIOLATION') {
@@ -1290,6 +1314,7 @@ export function createServer({ testMode = false } = {}) {
       ws,
       JSON.stringify({
         type: 'state',
+        worktreesEnabled: WORKTREES_ENABLED,
         projects,
         sessions: sessions.map((s) => ({
           ...s,

@@ -24,6 +24,7 @@
   }
   let initialStateApplied = false; // expand all projects on first state after load
   let browseScope = 'worktree'; // 'worktree' (session dir) or 'project' (repo root)
+  let worktreesEnabled = true; // server WORKTREES flag; when false, one root only
   let reconnectDelay = 1000;
   let toastTimeout = null;
   let shellTerm = null;
@@ -703,6 +704,10 @@
         case 'state':
           projects = msg.projects;
           sessions = msg.sessions;
+          if (typeof msg.worktreesEnabled === 'boolean') {
+            worktreesEnabled = msg.worktreesEnabled;
+            updateScopeToggleLabel();
+          }
           pruneLockedSessions();
           // On the first state after a page load, expand every project so all
           // sessions are visible without manual clicking, and auto-select the
@@ -1669,6 +1674,17 @@
   // Files scope toggle (worktree <-> project root)
   function updateScopeToggleLabel() {
     if (!filesScopeToggle) return;
+    // No-worktree mode: there's only one root (project). Force project scope and
+    // show the toggle disabled — it would be a no-op.
+    if (!worktreesEnabled) {
+      browseScope = 'project';
+      filesScopeToggle.textContent = 'Project root';
+      filesScopeToggle.classList.remove('active');
+      filesScopeToggle.disabled = true;
+      filesScopeToggle.title = 'Worktrees are disabled — sessions run in the project root.';
+      return;
+    }
+    filesScopeToggle.disabled = false;
     const inProject = browseScope === 'project';
     filesScopeToggle.textContent = inProject ? 'Session worktree' : 'Project root';
     filesScopeToggle.classList.toggle('active', inProject);
@@ -1678,6 +1694,7 @@
   }
   if (filesScopeToggle) {
     filesScopeToggle.onclick = () => {
+      if (!worktreesEnabled) return; // single root; toggle is a no-op
       browseScope = browseScope === 'project' ? 'worktree' : 'project';
       updateScopeToggleLabel();
       initFileTree();

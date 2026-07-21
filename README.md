@@ -58,6 +58,20 @@ Add a git repository as a project from the sidebar. Each project can have multip
 - **Archive** — Keeps the branch but removes the worktree. Useful for preserving work without cluttering your filesystem.
 - **Delete** — Removes the session, its worktree, and its branch entirely.
 
+#### Disabling worktrees
+
+By default each session runs in an isolated git worktree/branch. To run sessions
+directly in the project root instead (no branch, no `.worktrees/`, single file
+scope), start the server with `WORKTREES=off`:
+
+```
+WORKTREES=off npm start
+```
+
+With worktrees off, Claude and the shell both run in the project root, the Files
+"Project root / Session worktree" toggle is disabled, and sessions have no branch
+to merge or archive. Accepted "off" values: `off`, `0`, `false`, `no`.
+
 ### File Viewer
 
 Click any file in the right-panel tree to open it in a tab. Markdown files are rendered; code and text files display with plain text. Switch between the Claude terminal and open files using the tab bar.

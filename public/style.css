@@ -312,6 +312,11 @@ body {
 }
 .pane-btn:hover { background: #f92672; }
 .pane-btn.active { background: #f92672; }
+.pane-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pane-btn:disabled:hover { background: #3e3d32; }
 
 /* When the scope toggle is present, keep the path after it (not pushed right). */
 #files-pane .pane-btn { margin-left: 0; }

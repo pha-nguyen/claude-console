@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { createServer, getBrowseRoots, isWithinBrowseRoots, getAllowedOriginHosts, parseTranscript, encodeClaudeProjectDir, snapshotTranscripts, detectActiveTranscript, parseRunningAgentIds } from '../server.js';
+import { createServer, getBrowseRoots, isWithinBrowseRoots, getAllowedOriginHosts, parseTranscript, encodeClaudeProjectDir, snapshotTranscripts, detectActiveTranscript, parseRunningAgentIds, worktreesEnabledFromEnv } from '../server.js';
 
 const gitEnv = {
   GIT_AUTHOR_NAME: 'Test',
@@ -710,6 +710,65 @@ describe('Merge session to local', () => {
     // Working tree must be clean after the aborted merge
     const status = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
     assert.strictEqual(status.trim(), '', 'tree should be clean after aborted merge');
+  });
+});
+
+describe('worktreesEnabledFromEnv', () => {
+  it('defaults to true when WORKTREES is unset', () => {
+    assert.strictEqual(worktreesEnabledFromEnv({}), true);
+  });
+  it('is false for off/0/false/no (case-insensitive)', () => {
+    for (const v of ['off', 'OFF', '0', 'false', 'No']) {
+      assert.strictEqual(worktreesEnabledFromEnv({ WORKTREES: v }), false, v);
+    }
+  });
+  it('is true for on/1/anything-else', () => {
+    for (const v of ['on', '1', 'true', 'yes']) {
+      assert.strictEqual(worktreesEnabledFromEnv({ WORKTREES: v }), true, v);
+    }
+  });
+});
+
+describe('No-worktree mode (worktreesEnabled:false)', () => {
+  let server, baseUrl, tempDir;
+  before(async () => {
+    server = createServer({ testMode: true, worktreesEnabled: false });
+    await new Promise((resolve) => server.listen(0, resolve));
+    baseUrl = `http://localhost:${server.address().port}`;
+    tempDir = createTempRepo();
+  });
+  after(async () => {
+    await server.destroy();
+    if (tempDir) cleanupDir(tempDir);
+  });
+
+  it('creates a session with no branch/worktree and no .worktrees dir', async () => {
+    const proj = await (await fetch(`${baseUrl}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'no-wt', cwd: tempDir }),
+    })).json();
+    const res = await fetch(`${baseUrl}/api/projects/${proj.id}/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'plain' }),
+    });
+    assert.strictEqual(res.status, 201);
+    const session = await res.json();
+    assert.strictEqual(session.branchName, null, 'no branch');
+    assert.strictEqual(session.worktreePath, null, 'no worktree path');
+    assert.ok(!fs.existsSync(path.join(tempDir, '.worktrees')), '.worktrees not created');
+  });
+
+  it('reports worktreesEnabled:false in state', async () => {
+    const { WebSocket } = await import('ws');
+    const ws = new WebSocket(`ws://localhost:${server.address().port}/ws`);
+    const state = await new Promise((resolve) => {
+      ws.on('message', (raw) => {
+        const m = JSON.parse(raw.toString());
+        if (m.type === 'state') resolve(m);
+      });
+    });
+    assert.strictEqual(state.worktreesEnabled, false);
+    ws.close();
   });
 });
 
