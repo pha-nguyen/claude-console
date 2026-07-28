@@ -53,24 +53,25 @@ Add a git repository as a project from the sidebar. Each project can have multip
 
 ### Sessions
 
-- **Create** — Click "+" next to a project to start a new session. Each session gets its own git worktree and branch.
+- **Create** — Click "+" next to a project to start a new session. By default the session runs directly in the project root.
 - **Restart** — Restarts a stopped session, resuming the Claude conversation where it left off.
-- **Archive** — Keeps the branch but removes the worktree. Useful for preserving work without cluttering your filesystem.
-- **Delete** — Removes the session, its worktree, and its branch entirely.
+- **Delete** — Removes the session (and, if it has one, its worktree/branch).
 
-#### Disabling worktrees
+#### Isolated worktrees (opt-in)
 
-By default each session runs in an isolated git worktree/branch. To run sessions
-directly in the project root instead (no branch, no `.worktrees/`, single file
-scope), start the server with `WORKTREES=off`:
+By default sessions run directly in the project root (no branch, no
+`.worktrees/`, single file scope). To give each session its own isolated git
+worktree/branch instead — so parallel experiments never conflict — start the
+server with `WORKTREES=on`:
 
 ```
-WORKTREES=off npm start
+WORKTREES=on npm start
 ```
 
-With worktrees off, Claude and the shell both run in the project root, the Files
-"Project root / Session worktree" toggle is disabled, and sessions have no branch
-to merge or archive. Accepted "off" values: `off`, `0`, `false`, `no`.
+With worktrees on, each session gets a `claude/<name>-<id>` branch under
+`.worktrees/`, the Files pane offers a "Project root / Session worktree" scope
+toggle, and sessions can be merged back to local or archived. Accepted "on"
+values: `on`, `1`, `true`, `yes`.
 
 ### File Viewer
 

@@ -31,13 +31,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAX_NAME_LENGTH = 100;
 const MAX_CWD_LENGTH = 1024;
 
-// Worktrees are ON unless WORKTREES is off/0/false/no. When OFF, sessions do NOT
-// get an isolated git worktree: Claude and the shell both run in the project
-// root and there's a single file scope. Sessions are stored with
-// branchName/worktreePath = null, which every worktree-aware path already
-// treats as "use the project cwd". Exported for testing.
+// Worktrees are OFF by default: sessions run directly in the project root
+// (Claude and the shell), with a single file scope, and are stored with
+// branchName/worktreePath = null (every worktree-aware path already treats a
+// null worktreePath as "use the project cwd"). Set WORKTREES to on/1/true/yes
+// to opt into isolated per-session git worktrees. Exported for testing.
 export function worktreesEnabledFromEnv(env = process.env) {
-  return !/^(off|0|false|no)$/i.test(env.WORKTREES || '');
+  return /^(on|1|true|yes)$/i.test(env.WORKTREES || '');
 }
 
 /**
@@ -769,6 +769,14 @@ export function createServer({ testMode = false, worktreesEnabled } = {}) {
         err.code = e.code || 'INVALID_WORKTREE_PATH';
         throw err;
       }
+      // The worktree may have been removed (archived/deleted/cleaned up) while
+      // the conversation transcript lives on. The transcript is independent of
+      // the worktree, so fall back to the project root to resume it rather than
+      // failing — we lose worktree isolation but keep the conversation.
+      if (!fs.existsSync(cwd)) {
+        console.warn(`[spawn] Worktree missing for ${session.name}; running in project root`);
+        cwd = project.cwd;
+      }
     }
 
     // If we'd resume a conversation that's ALREADY running as a live agent,
@@ -1253,11 +1261,15 @@ export function createServer({ testMode = false, worktreesEnabled } = {}) {
         return res.status(400).json({ error: 'Project directory no longer exists' });
       }
 
+      // If the worktree is gone, we can still resume the conversation in the
+      // project root (the transcript is independent of the worktree). Only
+      // refuse when there's no saved conversation to fall back to.
+      let worktreeGone = false;
       if (session.branchName) {
-        const exists = await worktreeExists(project.cwd, session.branchName);
-        if (!exists) {
+        worktreeGone = !(await worktreeExists(project.cwd, session.branchName));
+        if (worktreeGone && !session.claudeSessionId) {
           return res.status(400).json({
-            error: 'Worktree no longer exists. Session cannot be restarted.',
+            error: 'Worktree no longer exists and this session has no saved conversation to resume.',
             code: 'WORKTREE_MISSING',
           });
         }
@@ -1288,7 +1300,7 @@ export function createServer({ testMode = false, worktreesEnabled } = {}) {
       }
 
       broadcastState();
-      res.json({ ...store.getSession(session.id), alive: true });
+      res.json({ ...store.getSession(session.id), alive: true, ranInProjectRoot: worktreeGone });
     } finally {
       restarting.delete(session.id);
     }

@@ -51,9 +51,10 @@ function createTempRepo() {
 }
 
 try {
-  // Setup
+  // Setup. Force worktrees ON so the worktree-dependent UI (merge button, branch
+  // badge, Files scope toggle) is exercised; worktrees now default to OFF.
   tempDir = createTempRepo();
-  server = createServer({ testMode: true });
+  server = createServer({ testMode: true, worktreesEnabled: true });
   await new Promise((resolve) => server.listen(0, resolve));
   const port = server.address().port;
   const BASE = `http://127.0.0.1:${port}`;

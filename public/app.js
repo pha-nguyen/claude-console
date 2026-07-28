@@ -24,7 +24,6 @@
   }
   let initialStateApplied = false; // expand all projects on first state after load
   let browseScope = 'worktree'; // 'worktree' (session dir) or 'project' (repo root)
-  let worktreesEnabled = true; // server WORKTREES flag; when false, one root only
   let reconnectDelay = 1000;
   let toastTimeout = null;
   let shellTerm = null;
@@ -704,10 +703,6 @@
         case 'state':
           projects = msg.projects;
           sessions = msg.sessions;
-          if (typeof msg.worktreesEnabled === 'boolean') {
-            worktreesEnabled = msg.worktreesEnabled;
-            updateScopeToggleLabel();
-          }
           pruneLockedSessions();
           // On the first state after a page load, expand every project so all
           // sessions are visible without manual clicking, and auto-select the
@@ -895,17 +890,14 @@
     clearTimeout(shellAttachTimer);
     noSession.classList.add('hidden');
 
-    // Update the Files pane path for this session
     const session = sessions.find((s) => s.id === sessionId);
     if (session) {
-      rightPanelPath.textContent = session.worktreePath || '';
-      rightPanelPath.title = session.worktreePath || '';
-
-      // Reset tabs and file tree for new session
+      // Reset tabs and file tree for new session. Default to worktree scope only
+      // when this session actually has one; otherwise browse the project root.
       openTabs = [];
       activeTabId = 'claude';
-      browseScope = 'worktree';
-      updateScopeToggleLabel();
+      browseScope = session.worktreePath ? 'worktree' : 'project';
+      updateScopeToggleLabel(); // also updates the Files pane path label
       switchTab('claude');
       renderTabs();
       initFileTree();
@@ -1387,7 +1379,7 @@
     if (!res.ok) {
       const err = await res.json();
       if (err.code === 'WORKTREE_MISSING') {
-        if (!suppressModal) showToast('Worktree has been removed. Session cannot be restarted.', 'error');
+        if (!suppressModal) showToast('Worktree removed and no saved conversation to resume.', 'error');
       } else if (err.code === 'SESSION_RUNNING_ELSEWHERE') {
         // Suppressed during unprompted auto-select-on-load: don't pop a modal
         // the user didn't ask for. Signal the caller to handle it quietly.
@@ -1416,6 +1408,11 @@
         showToast(err.error || 'Failed to restart session', 'error');
       }
       return false;
+    }
+    // Surfaced when the worktree was gone and we resumed in the project root.
+    const data = await res.json().catch(() => ({}));
+    if (data.ranInProjectRoot && !suppressModal) {
+      showToast('Worktree was removed — resumed in the project root.', 'warning', 6000);
     }
     return true;
   }
@@ -1674,14 +1671,24 @@
   // Files scope toggle (worktree <-> project root)
   function updateScopeToggleLabel() {
     if (!filesScopeToggle) return;
-    // No-worktree mode: there's only one root (project). Force project scope and
-    // show the toggle disabled — it would be a no-op.
-    if (!worktreesEnabled) {
+    // The toggle is meaningful only when THIS session actually has a worktree.
+    // A session without one (worktrees-off, or never had one) has a single root
+    // (the project), so force project scope and disable the toggle. This is
+    // per-session, not global — a pre-existing worktree session keeps a working
+    // toggle even if new sessions are created without worktrees.
+    const activeSession = sessions.find((s) => s.id === activeSessionId);
+    const hasWorktree = !!(activeSession && activeSession.worktreePath);
+    const setPath = (text) => {
+      rightPanelPath.textContent = text;
+      rightPanelPath.title = text;
+    };
+    if (!hasWorktree) {
       browseScope = 'project';
       filesScopeToggle.textContent = 'Project root';
       filesScopeToggle.classList.remove('active');
       filesScopeToggle.disabled = true;
-      filesScopeToggle.title = 'Worktrees are disabled — sessions run in the project root.';
+      filesScopeToggle.title = 'This session runs in the project root (no worktree).';
+      setPath('project root');
       return;
     }
     filesScopeToggle.disabled = false;
@@ -1691,10 +1698,13 @@
     filesScopeToggle.title = inProject
       ? 'Currently browsing the whole project. Click to return to this session’s worktree.'
       : 'Currently browsing this session’s worktree. Click to browse the whole project root.';
+    // Reflect the ACTUAL browsed root in the path label (was always showing the
+    // worktree path even while browsing the project root).
+    setPath(inProject ? 'project root' : activeSession.worktreePath);
   }
   if (filesScopeToggle) {
     filesScopeToggle.onclick = () => {
-      if (!worktreesEnabled) return; // single root; toggle is a no-op
+      if (filesScopeToggle.disabled) return; // single root; toggle is a no-op
       browseScope = browseScope === 'project' ? 'worktree' : 'project';
       updateScopeToggleLabel();
       initFileTree();

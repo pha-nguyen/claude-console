@@ -230,7 +230,7 @@ describe('Git Worktree Integration', () => {
   let tempDir;
 
   before(async () => {
-    server = createServer({ testMode: true });
+    server = createServer({ testMode: true, worktreesEnabled: true });
     await new Promise((resolve) => server.listen(0, resolve));
     baseUrl = `http://localhost:${server.address().port}`;
   });
@@ -307,7 +307,7 @@ describe('Worktree Session Lifecycle', () => {
   let projectId;
 
   before(async () => {
-    server = createServer({ testMode: true });
+    server = createServer({ testMode: true, worktreesEnabled: true });
     await new Promise((resolve) => server.listen(0, resolve));
     baseUrl = `http://localhost:${server.address().port}`;
 
@@ -364,7 +364,7 @@ describe('Worktree Session Lifecycle', () => {
     assert.ok(!session.branchName.includes('/'), 'branchName should not contain /');
   });
 
-  it('POST /api/sessions/:id/restart returns WORKTREE_MISSING when worktree removed', async () => {
+  it('POST /api/sessions/:id/restart returns WORKTREE_MISSING when worktree removed and no saved conversation', async () => {
     // Create a session
     const createRes = await fetch(`${baseUrl}/api/projects/${projectId}/sessions`, {
       method: 'POST',
@@ -527,7 +527,7 @@ describe('Worktree Integration - Full Lifecycle', () => {
   let tempDir;
 
   before(async () => {
-    server = createServer({ testMode: true });
+    server = createServer({ testMode: true, worktreesEnabled: true });
     await new Promise((resolve) => server.listen(0, resolve));
     baseUrl = `http://localhost:${server.address().port}`;
 
@@ -648,7 +648,7 @@ describe('Merge session to local', () => {
   let tempDir;
 
   before(async () => {
-    server = createServer({ testMode: true });
+    server = createServer({ testMode: true, worktreesEnabled: true });
     await new Promise((resolve) => server.listen(0, resolve));
     baseUrl = `http://localhost:${server.address().port}`;
     // Repo with a real committed base on 'main' and .worktrees gitignored.
@@ -714,17 +714,17 @@ describe('Merge session to local', () => {
 });
 
 describe('worktreesEnabledFromEnv', () => {
-  it('defaults to true when WORKTREES is unset', () => {
-    assert.strictEqual(worktreesEnabledFromEnv({}), true);
+  it('defaults to false when WORKTREES is unset', () => {
+    assert.strictEqual(worktreesEnabledFromEnv({}), false);
   });
-  it('is false for off/0/false/no (case-insensitive)', () => {
-    for (const v of ['off', 'OFF', '0', 'false', 'No']) {
-      assert.strictEqual(worktreesEnabledFromEnv({ WORKTREES: v }), false, v);
+  it('is true only for on/1/true/yes (case-insensitive)', () => {
+    for (const v of ['on', 'ON', '1', 'true', 'Yes']) {
+      assert.strictEqual(worktreesEnabledFromEnv({ WORKTREES: v }), true, v);
     }
   });
-  it('is true for on/1/anything-else', () => {
-    for (const v of ['on', '1', 'true', 'yes']) {
-      assert.strictEqual(worktreesEnabledFromEnv({ WORKTREES: v }), true, v);
+  it('is false for off/0/false/no and anything unrecognized', () => {
+    for (const v of ['off', '0', 'false', 'no', 'maybe', '']) {
+      assert.strictEqual(worktreesEnabledFromEnv({ WORKTREES: v }), false, v);
     }
   });
 });
@@ -778,7 +778,7 @@ describe('Worktree Orphan Cleanup Integration', () => {
   let tempDir;
 
   before(async () => {
-    server = createServer({ testMode: true });
+    server = createServer({ testMode: true, worktreesEnabled: true });
     await new Promise((resolve) => server.listen(0, resolve));
     baseUrl = `http://localhost:${server.address().port}`;
   });
