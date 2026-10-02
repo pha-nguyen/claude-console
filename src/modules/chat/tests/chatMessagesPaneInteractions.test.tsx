@@ -15,14 +15,14 @@ const message: ChatMessage = {
   timestamp: '2026-10-02T00:00:00Z',
 };
 
-function renderPane(entry = message) {
+function renderPane() {
   const props: ComponentProps<typeof ChatMessagesPane> = {
     scrollContainerRef: createRef<HTMLDivElement>(),
     textareaRef: createRef<HTMLTextAreaElement>(),
     onWheel: vi.fn(),
     onTouchMove: vi.fn(),
     isLoadingSessionMessages: false,
-    chatMessages: [entry],
+    chatMessages: [message],
     selectedSession: null,
     currentSessionId: null,
     provider: 'codex',
@@ -44,7 +44,7 @@ function renderPane(entry = message) {
     totalMessages: 1,
     sessionMessagesCount: 1,
     visibleMessageCount: 1,
-    visibleMessages: [entry],
+    visibleMessages: [message],
     loadEarlierMessages: noop,
     revealMessage: noop,
     sendMessage: noop,
@@ -85,49 +85,6 @@ test('selection copy writes plain text without collapsing code indentation or bl
   expect(clipboardData.setData.mock.calls).toEqual([
     ['text/plain', '  first line\n\n\n  last line'],
   ]);
-});
-
-test('user messages render and copy literal text with their original whitespace', () => {
-  const content = '  Please keep **bold** and <literal> tags.\n- First item\n- Second item\n\n\n  Last line  \n';
-  const { pane } = renderPane({ ...message, type: 'user', content });
-  const body = pane.querySelector('.chat-message.user [dir="auto"]')!;
-  expect(body.textContent).toBe(content);
-  selectContents(body);
-  const clipboardData = { setData: vi.fn() };
-
-  fireEvent.copy(body, { clipboardData });
-
-  expect(clipboardData.setData.mock.calls).toEqual([['text/plain', content]]);
-});
-
-test('user selection copy avoids browser-generated breaks around CRLFs', () => {
-  const content = 'First line\r\nSecond line\r\n\r\nLast line\r\n';
-  const { pane } = renderPane({ ...message, type: 'user', content });
-  const body = pane.querySelector('.chat-message.user [dir="auto"]')!;
-  const selection = selectContents(body);
-  // Firefox's rendered Selection string doubles these breaks; Range stays literal.
-  vi.spyOn(selection, 'toString').mockReturnValue(content.replace(/\r\n/g, '\n\n'));
-  const clipboardData = { setData: vi.fn() };
-
-  fireEvent.copy(body, { clipboardData });
-
-  expect(clipboardData.setData.mock.calls).toEqual([['text/plain', content]]);
-});
-
-test.each(['forward', 'backward'])('copying a %s partial user selection includes only the selected text', (direction) => {
-  const content = 'First line\n\n  Second line\nThird line';
-  const { pane } = renderPane({ ...message, type: 'user', content });
-  const body = pane.querySelector('.chat-message.user [dir="auto"]')!;
-  const text = body.firstChild!;
-  const start = 6;
-  const end = content.indexOf('Third');
-  const selection = window.getSelection()!;
-  selection.setBaseAndExtent(text, direction === 'forward' ? start : end, text, direction === 'forward' ? end : start);
-  const clipboardData = { setData: vi.fn() };
-
-  fireEvent.copy(body, { clipboardData });
-
-  expect(clipboardData.setData.mock.calls).toEqual([['text/plain', content.slice(start, end)]]);
 });
 
 test('copy leaves editable fields and selections outside the conversation to the browser', () => {

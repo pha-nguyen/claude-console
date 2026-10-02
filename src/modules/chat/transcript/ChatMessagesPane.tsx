@@ -194,16 +194,9 @@ function ChatMessagesPane({
       || !event.currentTarget.contains(selection.anchorNode)
       || !event.currentTarget.contains(selection.focusNode)) return;
 
-    const anchor = selection.anchorNode;
-    const userText = (anchor instanceof Element ? anchor : anchor?.parentElement)
-      ?.closest('[data-user-message-text]');
-    // A literal user bubble has only source text. Range preserves its trailing
-    // newlines and CRLFs, which the browser's rendered Selection can alter.
-    const text = selection.rangeCount === 1 && userText?.contains(selection.focusNode)
-      ? selection.getRangeAt(0).toString()
-      : selection.toString();
     // Rich clipboard HTML carries layout wrappers and spacing into paste targets.
-    event.clipboardData.setData('text/plain', text);
+    // Keep the selected text verbatim, including intentional blank lines in code.
+    event.clipboardData.setData('text/plain', selection.toString());
     event.preventDefault();
   };
 

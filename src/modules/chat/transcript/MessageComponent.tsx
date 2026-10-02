@@ -112,9 +112,13 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
             )}
             {userCopyContent.trim().length > 0 || (!message.images?.length && !message.files?.length) ? (
               <div className="group max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/60 px-3 py-2 text-foreground shadow-sm dark:bg-gray-800/60 sm:px-4">
-                {/* Literal text keeps selected copies faithful to the user's whitespace. */}
-                <div data-user-message-text dir="auto" className="whitespace-pre-wrap break-words font-serif text-sm">
-                  {userCopyContent}
+                <div dir="auto" className="break-words font-serif text-sm">
+                  <Markdown
+                    breaks
+                    className="prose prose-sm max-w-none font-serif dark:prose-invert"
+                  >
+                    {message.content}
+                  </Markdown>
                 </div>
                 <div className="mt-1 flex items-center justify-end gap-1 text-xs text-muted-foreground">
                   {onEditMessage && message.transcriptAnchorId && (
