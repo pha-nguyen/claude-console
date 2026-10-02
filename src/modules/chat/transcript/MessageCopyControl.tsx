@@ -43,13 +43,13 @@ const convertMarkdownToPlainText = (markdown: string): string => {
  * Rendered by chat's MessageComponent to copy a turn to the clipboard, with a
  * markdown/plain-text format picker on assistant turns.
  */
-const MessageCopyControl = ({
+export default function MessageCopyControl({
   content,
   messageType,
 }: {
   content: string;
   messageType: 'user' | 'assistant';
-}) => {
+}) {
   const { t } = useTranslation('chat');
   const canSelectCopyFormat = messageType === 'assistant';
   const defaultFormat: CopyFormat = canSelectCopyFormat ? 'markdown' : 'text';
@@ -101,11 +101,12 @@ const MessageCopyControl = ({
     : t('copyMessage.textShort', { defaultValue: 'TXT' });
 
   const copyPayload = useMemo(() => {
-    if (selectedFormat === 'markdown') {
+    // User turns are literal input; stripping Markdown changes text they typed.
+    if (messageType === 'user' || selectedFormat === 'markdown') {
       return content;
     }
     return convertMarkdownToPlainText(content);
-  }, [content, selectedFormat]);
+  }, [content, messageType, selectedFormat]);
 
   useEffect(() => {
     setSelectedFormat(defaultFormat);
@@ -256,6 +257,4 @@ const MessageCopyControl = ({
       )}
     </div>
   );
-};
-
-export default MessageCopyControl;
+}
