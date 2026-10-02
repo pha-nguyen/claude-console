@@ -49,7 +49,7 @@ export default function SettingsSidebar({ activeTab, onChange }: SettingsSidebar
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors duration-150',
                   isActive
-                    ? 'bg-accent text-accent-foreground'
+                    ? 'bg-primary/10 text-link'
                     : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground active:bg-accent/50',
                 )}
               >

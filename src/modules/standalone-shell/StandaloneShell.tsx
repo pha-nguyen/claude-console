@@ -9,6 +9,7 @@ type StandaloneShellProps = {
   project?: Project | null;
   session?: ProjectSession | null;
   command?: string | null;
+  commandLabel?: string | null;
   isPlainShell?: boolean | null;
   isActive?: boolean;
   autoConnect?: boolean;
@@ -21,11 +22,12 @@ type StandaloneShellProps = {
   minimal?: boolean;
 };
 
-/** This module's only public export: used by the project-workspace module for its shell tab and by provider-auth to run an interactive login command. */
+/** This module's only public export: used by project-workspace for Terminal and agent Shell tabs and by provider-auth to run an interactive login command. */
 export default function StandaloneShell({
   project = null,
   session = null,
   command = null,
+  commandLabel = null,
   isPlainShell = null,
   isActive = true,
   autoConnect = true,
@@ -67,6 +69,7 @@ export default function StandaloneShell({
           selectedProject={project}
           selectedSession={session}
           initialCommand={command}
+          initialCommandLabel={commandLabel}
           isPlainShell={shouldUsePlainShell}
           isActive={isActive}
           onProcessComplete={handleProcessComplete}

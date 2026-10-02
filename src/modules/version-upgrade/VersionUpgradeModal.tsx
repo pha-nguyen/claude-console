@@ -187,7 +187,7 @@ export function VersionUpgradeModal({
                                     href={releaseInfo.htmlUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                                    className="flex items-center gap-1 text-xs text-link hover:text-link/80 hover:underline"
                                 >
                                     {t('versionUpdate.viewFullRelease')}
                                     <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,7 +262,7 @@ export function VersionUpgradeModal({
                             <button
                                 onClick={handleUpdateNow}
                                 disabled={isUpdating}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {isUpdating ? (
                                     <>
@@ -283,7 +283,7 @@ export function VersionUpgradeModal({
 
 const changelogComponents = {
     a: ({ href, children }: { href?: string; children?: ReactNode }) => (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-link hover:underline">
             {children}
         </a>
     ),

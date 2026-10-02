@@ -10,12 +10,54 @@ import {
   Plug,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
+import { okaidia } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import type { FileStatusCode, LLMProvider, McpProvider, McpScope, McpTransport, SettingsMainTab } from '@/shared/types';
 import type { UserPreferenceKey } from '@/shared/userSettings';
 
 /** The four buckets the git changes view sorts working-tree files into. */
 type GitStatusFileGroup = 'modified' | 'added' | 'deleted' | 'untracked';
+
+//----------------- MONOKAI THEME ------------
+
+/** Shared Monokai colors for the terminal, editor and diagram renderers. */
+export const MONOKAI_COLORS = {
+  background: '#272822',
+  foreground: '#f8f8f2',
+  surface: '#1e1f1c',
+  panel: '#34352e',
+  selection: '#49483e',
+  border: '#494b40',
+  comment: '#8f9084',
+  pink: '#f92672',
+  green: '#a6e22e',
+  yellow: '#e6db74',
+  cyan: '#66d9ef',
+  orange: '#fd971f',
+  purple: '#ae81ff',
+};
+
+/**
+ * Prism's Monokai-derived Okaidia base with classic Monokai token roles.
+ * Chat and the editor's markdown preview share it so code reads consistently.
+ */
+export const MONOKAI_SYNTAX_THEME = {
+  ...okaidia,
+  comment: { color: MONOKAI_COLORS.comment },
+  prolog: { color: MONOKAI_COLORS.comment },
+  doctype: { color: MONOKAI_COLORS.comment },
+  cdata: { color: MONOKAI_COLORS.comment },
+  keyword: { color: MONOKAI_COLORS.pink },
+  operator: { color: MONOKAI_COLORS.pink },
+  string: { color: MONOKAI_COLORS.yellow },
+  char: { color: MONOKAI_COLORS.yellow },
+  'attr-value': { color: MONOKAI_COLORS.yellow },
+  function: { color: MONOKAI_COLORS.green },
+  'class-name': { color: MONOKAI_COLORS.cyan },
+  builtin: { color: MONOKAI_COLORS.cyan },
+};
+
+// ---------------------------
 
 //----------------- BRANDING ------------
 

@@ -243,16 +243,6 @@ async function dispatchRun(
   const clientOptions = (data.options ?? {}) as AnyRecord;
   const command = typeof data.content === 'string' ? data.content : '';
 
-  // Record what this turn runs with so reopening the session later restores the
-  // same model and reasoning effort, and so the resume path has a
-  // session-scoped model answer to use.
-  if (typeof clientOptions.model === 'string' && clientOptions.model.trim()) {
-    providerModelsService.setSessionModel(provider, sessionId, clientOptions.model);
-  }
-  if (typeof clientOptions.effort === 'string' && clientOptions.effort.trim()) {
-    providerModelsService.setSessionEffort(provider, sessionId, clientOptions.effort);
-  }
-
   const attachmentCandidates = [
     ...normalizeAttachmentDescriptors(clientOptions.images),
     ...normalizeAttachmentDescriptors(clientOptions.files),
@@ -284,6 +274,16 @@ async function dispatchRun(
 
   let failure: string | null = null;
   try {
+    // Normalize legacy model IDs before recording and running the turn. Keep
+    // this inside the try so a failed catalog read also releases the run.
+    if (typeof clientOptions.model === 'string' && clientOptions.model.trim()) {
+      const selection = await providerModelsService.setSessionModel(provider, sessionId, clientOptions.model);
+      runtimeOptions.model = selection?.model ?? clientOptions.model;
+    }
+    if (typeof clientOptions.effort === 'string' && clientOptions.effort.trim()) {
+      providerModelsService.setSessionEffort(provider, sessionId, clientOptions.effort);
+    }
+
     // Runs only now that the session is reserved, because an edit rewinds the
     // conversation here and a rewind for a run that was never admitted cannot
     // be taken back. Inside the try so a rewind that throws still releases the

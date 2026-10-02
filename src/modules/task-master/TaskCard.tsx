@@ -140,8 +140,8 @@ function TaskCard({ task, onClick = null, showParent = false, className = '' }: 
   return (
     <div
       className={cn(
-        'bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3',
-        'hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200',
+        'bg-white dark:bg-gray-800 rounded-lg border border-border p-3 space-y-3',
+        'hover:shadow-md hover:border-primary/40 transition-all duration-200',
         onClick ? 'cursor-pointer hover:-translate-y-0.5' : 'cursor-default',
         className,
       )}

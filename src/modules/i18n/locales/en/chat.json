@@ -214,6 +214,7 @@
       "restart": "Restart",
       "restartTitle": "Restart Shell",
       "connect": "Continue in Shell",
+      "connectCommand": "Open {{command}}",
       "connectTitle": "Connect to shell",
       "bypass": "Bypass",
       "bypassOnTitle": "Bypass permissions on — click to disable (restarts the CLI)",

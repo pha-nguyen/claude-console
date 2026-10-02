@@ -43,6 +43,7 @@ Thumbs.db
 logs/
 
 # Runtime data
+/.local/cloudcli/
 pids
 *.pid
 *.seed

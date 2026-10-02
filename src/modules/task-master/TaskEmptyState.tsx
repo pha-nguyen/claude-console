@@ -48,7 +48,7 @@ export default function TaskEmptyState({
 
           <button
             onClick={onOpenSetupModal}
-            className="mx-auto flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
+            className="mx-auto flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <Terminal className="h-4 w-4" />
             {t('notConfigured.initializeButton')}
@@ -61,7 +61,7 @@ export default function TaskEmptyState({
   return (
     <div className={cn('text-center py-12', className)}>
       <div className="mx-auto max-w-4xl">
-        <div className="mb-6 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-6 text-left dark:border-blue-800 dark:from-blue-950/50 dark:to-indigo-950/50">
+        <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-6 text-left">
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/50">
               <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -79,7 +79,7 @@ export default function TaskEmptyState({
 
               <button
                 onClick={onCreatePrd}
-                className="inline-flex items-center gap-2 rounded bg-purple-100 px-2 py-1 text-xs text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                className="inline-flex items-center gap-2 rounded bg-primary/10 px-2 py-1 text-xs text-link hover:bg-primary/20"
               >
                 <FileText className="h-3 w-3" />
                 {t('gettingStarted.steps.createPRD.addButton')}
@@ -122,7 +122,7 @@ export default function TaskEmptyState({
 
           <button
             onClick={onCreatePrd}
-            className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 font-medium text-white hover:bg-purple-700"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90"
           >
             <FileText className="h-4 w-4" />
             {t('buttons.addPRD')}

@@ -94,6 +94,7 @@ test('a stored theme is applied on the first render', () => {
 });
 
 test('toggling stores the theme the user picked', () => {
+  writeUserPreference('theme', 'light');
   const { result } = renderHook(() => useTheme(), { wrapper });
   assert.equal(result.current.isDarkMode, false);
 
@@ -118,17 +119,17 @@ test('a theme arriving from the store is applied without being written back', ()
   assert.equal(readUserPreference('theme', null), 'dark');
 });
 
-test('a user who has never chosen a theme is following the system', () => {
-  emulateSystemDarkAppearance(true);
+test.each([false, true])('Monokai is the default when the OS dark preference is %s', (systemIsDark) => {
+  emulateSystemDarkAppearance(systemIsDark);
 
   const { result } = renderHook(() => useTheme(), { wrapper });
 
-  assert.equal(result.current.themeMode, 'system');
+  assert.equal(result.current.themeMode, 'dark');
   assert.equal(result.current.isDarkMode, true);
   assert.equal(
     readUserPreference<unknown>('theme', null),
     null,
-    'following the system is the default, not something to record',
+    'the default must not be saved over a preference still arriving from another device',
   );
 });
 
@@ -188,12 +189,12 @@ test('an explicit toggle leaves system mode behind', () => {
   assert.equal(readUserPreference('theme', null), 'dark');
 });
 
-test('a stored value written by a newer client falls back to following the system', () => {
-  emulateSystemDarkAppearance(true);
+test('an unrecognized stored theme falls back to Monokai', () => {
+  emulateSystemDarkAppearance(false);
   writeUserPreference('theme', 'solarized');
 
   const { result } = renderHook(() => useTheme(), { wrapper });
 
-  assert.equal(result.current.themeMode, 'system');
+  assert.equal(result.current.themeMode, 'dark');
   assert.equal(result.current.isDarkMode, true);
 });

@@ -9,7 +9,7 @@ import type { ITerminalOptions } from '@xterm/xterm';
 
 import type { MobileTerminalSelectionManager, Project } from '@/shared/types';
 import { copyTextToClipboard } from '@/shared/utils';
-import { TERMINAL_INIT_DELAY_MS } from '@/shared/constants';
+import { MONOKAI_COLORS, TERMINAL_INIT_DELAY_MS } from '@/shared/constants';
 import { installMobileTerminalSelection } from '@/modules/shell/utils/mobileTerminalSelection';
 import { sendSocketMessage } from '@/modules/shell/utils/socket';
 import { ensureXtermFocusStyles } from '@/modules/shell/utils/terminalStyles';
@@ -28,48 +28,30 @@ const TERMINAL_OPTIONS: ITerminalOptions = {
   windowsMode: false,
   macOptionIsMeta: true,
   macOptionClickForcesSelection: true,
-  // Keep the runtime theme keys used by the previous JSX implementation.
+  // The shell stays dark for CLI readability and matches the app's Monokai theme.
   theme: {
-    background: '#1e1e1e',
-    foreground: '#d4d4d4',
-    cursor: '#ffffff',
-    cursorAccent: '#1e1e1e',
-    selectionBackground: '#264f78',
-    selectionForeground: '#ffffff',
-    black: '#000000',
-    red: '#cd3131',
-    green: '#0dbc79',
-    yellow: '#e5e510',
-    blue: '#2472c8',
-    magenta: '#bc3fbc',
-    cyan: '#11a8cd',
-    white: '#e5e5e5',
-    brightBlack: '#666666',
-    brightRed: '#f14c4c',
-    brightGreen: '#23d18b',
-    brightYellow: '#f5f543',
-    brightBlue: '#3b8eea',
-    brightMagenta: '#d670d6',
-    brightCyan: '#29b8db',
-    brightWhite: '#ffffff',
-    extendedAnsi: [
-      '#000000',
-      '#800000',
-      '#008000',
-      '#808000',
-      '#000080',
-      '#800080',
-      '#008080',
-      '#c0c0c0',
-      '#808080',
-      '#ff0000',
-      '#00ff00',
-      '#ffff00',
-      '#0000ff',
-      '#ff00ff',
-      '#00ffff',
-      '#ffffff',
-    ],
+    background: MONOKAI_COLORS.background,
+    foreground: MONOKAI_COLORS.foreground,
+    cursor: MONOKAI_COLORS.foreground,
+    cursorAccent: MONOKAI_COLORS.background,
+    selectionBackground: MONOKAI_COLORS.selection,
+    selectionForeground: MONOKAI_COLORS.foreground,
+    black: MONOKAI_COLORS.surface,
+    red: MONOKAI_COLORS.pink,
+    green: MONOKAI_COLORS.green,
+    yellow: MONOKAI_COLORS.yellow,
+    blue: MONOKAI_COLORS.cyan,
+    magenta: MONOKAI_COLORS.purple,
+    cyan: MONOKAI_COLORS.cyan,
+    white: MONOKAI_COLORS.foreground,
+    brightBlack: MONOKAI_COLORS.comment,
+    brightRed: MONOKAI_COLORS.pink,
+    brightGreen: MONOKAI_COLORS.green,
+    brightYellow: MONOKAI_COLORS.yellow,
+    brightBlue: MONOKAI_COLORS.cyan,
+    brightMagenta: MONOKAI_COLORS.purple,
+    brightCyan: MONOKAI_COLORS.cyan,
+    brightWhite: MONOKAI_COLORS.foreground,
   },
 };
 

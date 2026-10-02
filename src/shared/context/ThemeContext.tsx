@@ -20,13 +20,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 /**
  * Reads the stored preference as a theme mode.
  *
- * Only `'dark'` and `'light'` were ever written before the system option
- * existed, so anything else — `'system'`, an absent value, or a value a newer
- * client wrote — means "follow the OS", which is also the default.
+ * Monokai is the default for a fresh device. Explicit light and system choices
+ * still win, including preferences arriving later from the server.
  */
 const readStoredThemeMode = (): ThemeMode => {
   const savedTheme = readUserPreference<string | null>('theme', null);
-  return savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'system';
+  return savedTheme === 'light' || savedTheme === 'system' ? savedTheme : 'dark';
 };
 
 /** Whether the OS currently asks for a dark appearance; false when unknown. */
@@ -80,7 +79,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
       const themeColorMeta = document.querySelector('meta[name="theme-color"]');
       if (themeColorMeta) {
-        themeColorMeta.setAttribute('content', '#141414'); // Dark background color (hsl(0 0% 8%))
+        themeColorMeta.setAttribute('content', '#272822'); // Monokai background, matching index.css.
       }
     } else {
       document.documentElement.classList.remove('dark');

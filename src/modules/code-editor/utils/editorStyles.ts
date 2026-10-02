@@ -1,11 +1,13 @@
+import { MONOKAI_COLORS } from '@/shared/constants';
+
 export const getEditorLoadingStyles = (isDarkMode: boolean) => {
   return `
     .code-editor-loading {
-      background-color: ${isDarkMode ? '#111827' : '#ffffff'} !important;
+      background-color: ${isDarkMode ? MONOKAI_COLORS.background : '#ffffff'} !important;
     }
 
     .code-editor-loading:hover {
-      background-color: ${isDarkMode ? '#111827' : '#ffffff'} !important;
+      background-color: ${isDarkMode ? MONOKAI_COLORS.background : '#ffffff'} !important;
     }
   `;
 };
@@ -13,19 +15,19 @@ export const getEditorLoadingStyles = (isDarkMode: boolean) => {
 export const getEditorStyles = (isDarkMode: boolean) => {
   return `
     .cm-deletedChunk {
-      background-color: ${isDarkMode ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 235, 235, 1)'} !important;
-      border-left: 3px solid ${isDarkMode ? 'rgba(239, 68, 68, 0.6)' : 'rgb(239, 68, 68)'} !important;
+      background-color: ${isDarkMode ? `${MONOKAI_COLORS.pink}26` : 'rgba(255, 235, 235, 1)'} !important;
+      border-left: 3px solid ${isDarkMode ? `${MONOKAI_COLORS.pink}99` : 'rgb(239, 68, 68)'} !important;
       padding-left: 4px !important;
     }
 
     .cm-insertedChunk {
-      background-color: ${isDarkMode ? 'rgba(34, 197, 94, 0.15)' : 'rgba(230, 255, 237, 1)'} !important;
-      border-left: 3px solid ${isDarkMode ? 'rgba(34, 197, 94, 0.6)' : 'rgb(34, 197, 94)'} !important;
+      background-color: ${isDarkMode ? `${MONOKAI_COLORS.green}26` : 'rgba(230, 255, 237, 1)'} !important;
+      border-left: 3px solid ${isDarkMode ? `${MONOKAI_COLORS.green}99` : 'rgb(34, 197, 94)'} !important;
       padding-left: 4px !important;
     }
 
     .cm-editor.cm-merge-b .cm-changedText {
-      background: ${isDarkMode ? 'rgba(34, 197, 94, 0.4)' : 'rgba(34, 197, 94, 0.3)'} !important;
+      background: ${isDarkMode ? `${MONOKAI_COLORS.green}66` : 'rgba(34, 197, 94, 0.3)'} !important;
       padding-top: 2px !important;
       padding-bottom: 2px !important;
       margin-top: -2px !important;
@@ -33,7 +35,7 @@ export const getEditorStyles = (isDarkMode: boolean) => {
     }
 
     .cm-editor .cm-deletedChunk .cm-changedText {
-      background: ${isDarkMode ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.3)'} !important;
+      background: ${isDarkMode ? `${MONOKAI_COLORS.pink}66` : 'rgba(239, 68, 68, 0.3)'} !important;
       padding-top: 2px !important;
       padding-bottom: 2px !important;
       margin-top: -2px !important;
@@ -41,14 +43,14 @@ export const getEditorStyles = (isDarkMode: boolean) => {
     }
 
     .cm-gutter.cm-gutter-minimap {
-      background-color: ${isDarkMode ? '#1e1e1e' : '#f5f5f5'};
+      background-color: ${isDarkMode ? MONOKAI_COLORS.surface : '#f5f5f5'};
     }
 
     .cm-editor-toolbar-panel {
       padding: 4px 10px;
-      background-color: ${isDarkMode ? '#1f2937' : '#ffffff'};
-      border-bottom: 1px solid ${isDarkMode ? '#374151' : '#e5e7eb'};
-      color: ${isDarkMode ? '#d1d5db' : '#374151'};
+      background-color: ${isDarkMode ? MONOKAI_COLORS.panel : '#ffffff'};
+      border-bottom: 1px solid ${isDarkMode ? MONOKAI_COLORS.border : '#e5e7eb'};
+      color: ${isDarkMode ? MONOKAI_COLORS.foreground : '#374151'};
       font-size: 12px;
     }
 
@@ -68,7 +70,7 @@ export const getEditorStyles = (isDarkMode: boolean) => {
 
     .cm-diff-nav-btn:hover,
     .cm-toolbar-btn:hover {
-      background-color: ${isDarkMode ? '#374151' : '#f3f4f6'};
+      background-color: ${isDarkMode ? MONOKAI_COLORS.selection : '#f3f4f6'};
     }
 
     .cm-diff-nav-btn:disabled {

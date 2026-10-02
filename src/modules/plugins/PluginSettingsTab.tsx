@@ -180,8 +180,10 @@ function ToggleSwitch({ checked, onChange, ariaLabel }: { checked: boolean; onCh
           duration-200 after:absolute
           after:left-[2px] after:top-[2px] after:h-4 after:w-4
           after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:duration-200
-          after:content-[''] peer-checked:bg-emerald-500
+          after:content-[''] peer-checked:bg-primary
           peer-checked:after:translate-x-4
+          peer-focus-visible:ring-2 peer-focus-visible:ring-ring
+          peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background
         `}
       />
     </label>
@@ -444,7 +446,7 @@ function PluginRecommendationCard({
           <button
             onClick={onInstall}
             disabled={disabled}
-            className="flex flex-shrink-0 items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {installing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -604,7 +606,7 @@ export default function PluginSettingsTab() {
         <button
           onClick={handleInstall}
           disabled={installing || !gitUrl.trim()}
-          className="flex-shrink-0 border-l border-border bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-30"
+          className="flex-shrink-0 border-l border-border bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-30"
         >
           {installing ? (
             <Loader2 className="h-4 w-4 animate-spin" />

@@ -19,6 +19,7 @@
   },
   "tabs": {
     "chat": "Chat",
+    "terminal": "Terminal",
     "shell": "Shell",
     "files": "Files",
     "git": "Source Control",
@@ -306,6 +307,7 @@
     "openSettings": "Open settings",
     "toggleTheme": "Toggle theme",
     "navChat": "Go to Chat",
+    "navTerminal": "Go to Terminal",
     "navFiles": "Go to Files",
     "navShell": "Go to Shell",
     "navGit": "Go to Git",

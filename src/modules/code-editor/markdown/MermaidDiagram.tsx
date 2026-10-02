@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from 'react';
 import type mermaid from 'mermaid';
 
 import { useTheme } from '@/shared/context/ThemeContext';
+import { MONOKAI_COLORS } from '@/shared/constants';
 
 // Mermaid is ~1.5MB minified, so it is loaded on demand the first time a
 // diagram is rendered and shared by every instance afterwards.
@@ -41,7 +42,24 @@ export default function MermaidDiagram({ code }: MermaidDiagramProps) {
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',
-          theme: isDarkMode ? 'dark' : 'default',
+          theme: isDarkMode ? 'base' : 'default',
+          themeVariables: isDarkMode ? {
+            darkMode: true,
+            background: MONOKAI_COLORS.background,
+            primaryColor: MONOKAI_COLORS.panel,
+            primaryTextColor: MONOKAI_COLORS.foreground,
+            primaryBorderColor: MONOKAI_COLORS.green,
+            secondaryColor: MONOKAI_COLORS.selection,
+            secondaryTextColor: MONOKAI_COLORS.foreground,
+            secondaryBorderColor: MONOKAI_COLORS.cyan,
+            tertiaryColor: MONOKAI_COLORS.surface,
+            tertiaryTextColor: MONOKAI_COLORS.foreground,
+            tertiaryBorderColor: MONOKAI_COLORS.purple,
+            lineColor: MONOKAI_COLORS.cyan,
+            textColor: MONOKAI_COLORS.foreground,
+            edgeLabelBackground: MONOKAI_COLORS.background,
+            fontFamily: '"Encode Sans", system-ui, sans-serif',
+          } : {},
           suppressErrorRendering: true,
         });
         return mermaid.render(renderId, code.trim());

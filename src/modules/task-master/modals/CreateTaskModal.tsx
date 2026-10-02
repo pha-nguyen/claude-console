@@ -55,7 +55,7 @@ export default function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProp
               href="https://github.com/eyaltoledano/claude-task-master/blob/main/docs/examples.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block text-sm font-medium text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              className="inline-block text-sm font-medium text-link underline hover:text-link/80"
             >
               View TaskMaster documentation
             </a>

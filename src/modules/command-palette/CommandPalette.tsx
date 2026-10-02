@@ -49,8 +49,9 @@ type CommandPaletteProps = {
 
 const NAV_TABS: Array<{ id: AppTab; labelKey: string; keywords: string }> = [
   { id: 'chat', labelKey: 'commandPalette.navChat', keywords: 'chat messages conversation' },
+  { id: 'terminal', labelKey: 'commandPalette.navTerminal', keywords: 'terminal bash zsh console command line' },
   { id: 'files', labelKey: 'commandPalette.navFiles', keywords: 'files file tree explorer' },
-  { id: 'shell', labelKey: 'commandPalette.navShell', keywords: 'shell terminal console' },
+  { id: 'shell', labelKey: 'commandPalette.navShell', keywords: 'shell agent cli' },
   { id: 'git', labelKey: 'commandPalette.navGit', keywords: 'git diff branches' },
   { id: 'tasks', labelKey: 'commandPalette.navTasks', keywords: 'tasks taskmaster' },
 ];

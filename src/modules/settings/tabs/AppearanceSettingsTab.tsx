@@ -46,7 +46,7 @@ export default function AppearanceSettingsTab({
               className="w-full touch-manipulation rounded-lg border border-input bg-card p-2.5 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:w-36"
             >
               <option value="light">{t('appearanceSettings.theme.light')}</option>
-              <option value="dark">{t('appearanceSettings.theme.dark')}</option>
+              <option value="dark">Monokai</option>
               <option value="system">{t('appearanceSettings.theme.system')}</option>
             </select>
           </SettingsRow>

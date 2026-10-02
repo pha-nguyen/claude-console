@@ -12,6 +12,8 @@ export type ProviderModelOption = {
   value: string;
   label: string;
   description?: string;
+  /** Previous IDs for the same model, used to migrate saved selections to `value`. */
+  aliases?: string[];
   recordId?: number;
   isCustom?: boolean;
   effort?: {
@@ -51,7 +53,7 @@ export type ProviderModelActions = {
 //----------------- PROJECTS AND SESSIONS ------------
 
 /** Identifies the workspace pane the user is looking at; plugin panes are namespaced by plugin id. */
-export type AppTab = 'chat' | 'files' | 'shell' | 'git' | 'tasks' | 'browser' | `plugin:${string}`;
+export type AppTab = 'chat' | 'terminal' | 'files' | 'shell' | 'git' | 'tasks' | 'browser' | `plugin:${string}`;
 
 /** A message queued to be sent to a session at a future time. */
 export type ScheduledMessage = {

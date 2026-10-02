@@ -38,14 +38,14 @@ const MODE_APPEARANCE: Record<PermissionMode, ModeAppearance> = {
   auto: {
     icon: Bot,
     trigger:
-      'border-blue-300/60 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-600/40 dark:bg-blue-900/15 dark:text-blue-300 dark:hover:bg-blue-900/25',
-    item: 'text-blue-700 dark:text-blue-300',
+      'border-primary/20 bg-primary/10 text-link hover:bg-primary/15',
+    item: 'text-link',
   },
   acceptEdits: {
     icon: Smile,
     trigger:
-      'border-green-300/60 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-600/40 dark:bg-green-900/15 dark:text-green-300 dark:hover:bg-green-900/25',
-    item: 'text-green-700 dark:text-green-300',
+      'border-primary/20 bg-primary/10 text-link hover:bg-primary/15',
+    item: 'text-link',
   },
   bypassPermissions: {
     icon: AlertTriangle,
@@ -55,8 +55,8 @@ const MODE_APPEARANCE: Record<PermissionMode, ModeAppearance> = {
   },
   plan: {
     icon: ClipboardList,
-    trigger: 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10',
-    item: 'text-primary',
+    trigger: 'border-primary/20 bg-primary/10 text-link hover:bg-primary/15',
+    item: 'text-link',
   },
 };
 

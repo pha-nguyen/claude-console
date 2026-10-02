@@ -1,6 +1,7 @@
 import type { IDisposable, Terminal } from '@xterm/xterm';
 
 import { copyTextToClipboard } from '@/shared/utils';
+import { MONOKAI_COLORS } from '@/shared/constants';
 import type { MobileTerminalSelectionManager } from '@/shared/types';
 
 type TerminalCoords = {
@@ -176,8 +177,8 @@ class ShellMobileSelectionCore implements MobileTerminalSelectionManager {
     handle.style.width = `${HANDLE_SIZE_PX}px`;
     handle.style.height = `${HANDLE_SIZE_PX}px`;
     handle.style.borderRadius = '50%';
-    handle.style.background = '#3b82f6';
-    handle.style.border = '2px solid #fff';
+    handle.style.background = 'hsl(var(--primary))';
+    handle.style.border = `2px solid ${MONOKAI_COLORS.foreground}`;
     handle.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
     handle.style.display = 'none';
     handle.style.pointerEvents = 'auto';
@@ -194,7 +195,7 @@ class ShellMobileSelectionCore implements MobileTerminalSelectionManager {
     menu.style.alignItems = 'stretch';
     menu.style.padding = '4px';
     menu.style.gap = '2px';
-    menu.style.background = '#1f2937';
+    menu.style.background = MONOKAI_COLORS.panel;
     menu.style.border = '1px solid rgba(255,255,255,0.12)';
     menu.style.borderRadius = '10px';
     menu.style.boxShadow = '0 6px 20px rgba(0,0,0,0.4)';
@@ -225,7 +226,7 @@ class ShellMobileSelectionCore implements MobileTerminalSelectionManager {
     button.style.margin = '0';
     button.style.padding = '8px 14px';
     button.style.background = 'transparent';
-    button.style.color = '#f9fafb';
+    button.style.color = MONOKAI_COLORS.foreground;
     button.style.fontSize = '14px';
     button.style.fontFamily = 'inherit';
     button.style.lineHeight = '1';

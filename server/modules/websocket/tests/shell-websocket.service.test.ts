@@ -225,3 +225,54 @@ test('a missing project directory is reported as an error frame and starts no pt
     [{ type: 'error', message: 'Invalid project path' }]
   );
 });
+
+test('a plain terminal reconnects independently of an agent shell in the same project', () => {
+  const spawnedCommands: string[] = [];
+  const processes: ReturnType<typeof createFakePty>[] = [];
+  const command = 'exec "${SHELL:-bash}" -i';
+  const dependencies = {
+    resolveProviderSessionId: () => null,
+    spawnPty: (_shell: string, args: string | string[]) => {
+      spawnedCommands.push(Array.isArray(args) ? args[args.length - 1] : args);
+      const ptyProcess = createFakePty();
+      processes.push(ptyProcess);
+      return ptyProcess as never;
+    },
+  };
+  const terminalInit = JSON.stringify({
+    type: 'init',
+    projectPath: process.cwd(),
+    hasSession: false,
+    provider: 'plain-shell',
+    isPlainShell: true,
+    initialCommand: command,
+  });
+  const terminal = createFakeSocket();
+  const agent = createFakeSocket();
+  handleShellConnection(terminal as never, dependencies);
+  terminal.emit('message', terminalInit);
+  handleShellConnection(agent as never, dependencies);
+  agent.emit('message', JSON.stringify({
+    type: 'init',
+    projectPath: process.cwd(),
+    hasSession: false,
+    provider: 'codex',
+  }));
+
+  assert.deepEqual(spawnedCommands, [command, 'codex']);
+  processes[0].emitData('terminal-output');
+  processes[1].emitData('agent-output');
+  assert.ok(!terminal.frames.some((frame) => frame.includes('agent-output')));
+  assert.ok(!agent.frames.some((frame) => frame.includes('terminal-output')));
+
+  terminal.emit('close');
+  const reconnected = createFakeSocket();
+  handleShellConnection(reconnected as never, dependencies);
+  reconnected.emit('message', terminalInit);
+  assert.equal(spawnedCommands.length, 2, 'tab changes reuse the terminal process');
+  assert.ok(reconnected.frames.some((frame) => frame.includes('terminal-output')));
+  assert.ok(!reconnected.frames.some((frame) => frame.includes('agent-output')));
+  assert.ok(processes.every((ptyProcess) => !ptyProcess.killed));
+
+  processes.forEach((ptyProcess) => ptyProcess.emitExit());
+});

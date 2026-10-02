@@ -1,0 +1,3 @@
+# Match the Node 25 ABI used by this checkout's native dependencies.
+[tools]
+node = "25"

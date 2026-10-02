@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
+import { MONOKAI_SYNTAX_THEME } from '@/shared/constants';
 import { buildSyntaxTheme } from '@/modules/chat/utils/syntaxHighlightTheme';
 import type { PrismStyleSheet } from '@/modules/chat/utils/syntaxHighlightTheme';
 
 /**
  * The variable theme must be a lossless re-encoding of the two Prism themes:
  * resolving its variables with the `:root` block has to reproduce oneLight
- * exactly, and with the `.dark` block oneDark exactly. Otherwise the toggle
+ * exactly, and with the `.dark` block Monokai exactly. Otherwise the toggle
  * would be fast but the colours would drift.
  */
 
@@ -44,26 +45,28 @@ const resolve = (
       }
       const variableValue = variables.get(variableMatch[1]);
       // An undefined variable makes the declaration invalid, i.e. unset.
-      if (variableValue !== undefined) {
+      if (variableValue !== undefined && variableValue !== 'initial') {
         resolvedRule[property] = variableValue;
       }
     }
-    resolved[selector] = resolvedRule;
+    if (Object.keys(resolvedRule).length > 0) {
+      resolved[selector] = resolvedRule;
+    }
   }
 
   return resolved;
 };
 
-const theme = buildSyntaxTheme(oneLight as PrismStyleSheet, oneDark as PrismStyleSheet);
+const theme = buildSyntaxTheme(oneLight as PrismStyleSheet, MONOKAI_SYNTAX_THEME as PrismStyleSheet);
 
 test('the light variables reproduce oneLight exactly', () => {
   const resolved = resolve(theme.style, parseDeclarations(theme.css, ':root'));
   assert.deepEqual(resolved, oneLight);
 });
 
-test('the dark variables reproduce oneDark exactly', () => {
+test('the dark variables reproduce Monokai exactly without inheriting light-only rules', () => {
   const resolved = resolve(theme.style, parseDeclarations(theme.css, '\\.dark'));
-  assert.deepEqual(resolved, oneDark);
+  assert.deepEqual(resolved, MONOKAI_SYNTAX_THEME);
 });
 
 test('no theme-dependent value is left as a literal colour', () => {
@@ -72,7 +75,7 @@ test('no theme-dependent value is left as a literal colour', () => {
   for (const [selector, rule] of Object.entries(theme.style)) {
     for (const [property, value] of Object.entries(rule)) {
       const lightValue = (oneLight as PrismStyleSheet)[selector]?.[property];
-      const darkValue = (oneDark as PrismStyleSheet)[selector]?.[property];
+      const darkValue = (MONOKAI_SYNTAX_THEME as PrismStyleSheet)[selector]?.[property];
       if (lightValue === darkValue) {
         continue;
       }
@@ -86,11 +89,11 @@ test('no theme-dependent value is left as a literal colour', () => {
 });
 
 test('properties shared by both themes stay literal instead of becoming variables', () => {
-  // fontFamily is the same in both themes and must not cost a variable.
+  // Text alignment is the same in both themes and must not cost a variable.
   const codeRule = theme.style['code[class*="language-"]'];
-  assert.ok(codeRule.fontFamily);
+  assert.ok(codeRule.textAlign);
   assert.ok(
-    !codeRule.fontFamily.startsWith('var('),
+    !codeRule.textAlign.startsWith('var('),
     'identical values must not be turned into variables',
   );
 });

@@ -38,8 +38,8 @@ export default function SidebarModeTabs({
   t,
 }: SidebarModeTabsProps) {
   const tabs: ModeTab[] = [
-    { mode: 'projects', label: t('search.modeProjects'), icon: Folder, showLabel: true },
     { mode: 'conversations', label: t('search.modeConversations'), icon: MessageSquare, showLabel: true },
+    { mode: 'projects', label: t('search.modeProjects'), icon: Folder, showLabel: true },
     { mode: 'running', label: t('search.runningTooltip', 'Running sessions'), icon: Activity, showLabel: false },
     { mode: 'archived', label: t('search.archiveOnlyTooltip', 'Archive only'), icon: Archive, showLabel: false },
   ];
@@ -61,20 +61,19 @@ export default function SidebarModeTabs({
         aria-label={tab.showLabel ? undefined : tab.label}
         title={tab.showLabel ? undefined : tab.label}
         className={cn(
-          'flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-normal transition-all',
+          'flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-normal transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           tab.mode === 'archived' && 'px-2.5',
           canGrow && tab.showLabel && 'flex-1',
           isActive
-            ? 'bg-background text-foreground shadow-sm'
+            ? 'bg-primary/10 text-link shadow-sm ring-1 ring-primary/20'
             : 'text-muted-foreground hover:text-foreground',
-          isActive && tab.mode === 'running' && 'ring-1 ring-emerald-500/15',
         )}
       >
         {tab.mode === 'running' ? (
           <span className="relative flex h-3 w-3 items-center justify-center">
-            <Activity className={cn('h-3 w-3', runningSessionsCount > 0 && 'text-emerald-500')} />
+            <Activity className={cn('h-3 w-3', runningSessionsCount > 0 && 'text-link')} />
             {runningSessionsCount > 0 && (
-              <span className="absolute -right-2.5 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-emerald-500 px-0.5 text-[8px] font-semibold leading-none text-white shadow-sm ring-1 ring-background">
+              <span className="absolute -right-2.5 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-semibold leading-none text-primary-foreground shadow-sm ring-1 ring-background">
                 {runningBadgeText}
               </span>
             )}

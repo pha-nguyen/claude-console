@@ -172,7 +172,7 @@ export default function TaskDetailModal({
                   type="text"
                   value={editableTask.title}
                   onChange={(event) => setEditableTask({ ...editableTask, title: event.target.value })}
-                  className="w-full border-b-2 border-blue-500 bg-transparent text-lg font-semibold text-gray-900 focus:outline-none dark:text-white"
+                  className="w-full border-b-2 border-primary bg-transparent text-lg font-semibold text-gray-900 focus:outline-none dark:text-white"
                 />
               ) : (
                 <h1 className="line-clamp-2 text-lg font-semibold text-gray-900 dark:text-white md:text-xl">{task.title}</h1>
@@ -186,7 +186,7 @@ export default function TaskDetailModal({
                 <button
                   onClick={handleSaveChanges}
                   disabled={isSaving}
-                  className="rounded-md p-2 text-green-600 hover:bg-green-50 disabled:opacity-50 dark:hover:bg-green-950"
+                  className="rounded-md p-2 text-link hover:bg-primary/10 disabled:opacity-50"
                   title="Save"
                 >
                   <Save className={cn('w-5 h-5', isSaving && 'animate-spin')} />
@@ -252,7 +252,7 @@ export default function TaskDetailModal({
                     <button
                       key={String(dependency)}
                       onClick={() => onTaskClick?.({ id: dependency })}
-                      className="rounded bg-blue-100 px-2 py-1 text-sm text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800"
+                      className="rounded bg-primary/10 px-2 py-1 text-sm text-link hover:bg-primary/20"
                     >
                       <ArrowRight className="mr-1 inline h-3 w-3" />
                       {dependency}

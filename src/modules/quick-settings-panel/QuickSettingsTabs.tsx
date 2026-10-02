@@ -58,7 +58,7 @@ export default function QuickSettingsTabs({ activeTab, onSelectTab }: QuickSetti
             onKeyDown={handleKeyDown}
             className={`-mb-px flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
               isActive
-                ? 'border-primary text-foreground'
+                ? 'border-primary text-link'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
-import { oneDark } from '@codemirror/theme-one-dark';
 import type { Extension } from '@codemirror/state';
 
 import type { CodeEditorGotoTarget } from '@/shared/types';
-
+import { createMonokaiEditorTheme } from '@/shared/utils';
 import MarkdownPreview from '@/modules/code-editor/markdown/MarkdownPreview';
+
+const monokaiTheme = createMonokaiEditorTheme();
 
 type CodeEditorSurfaceProps = {
   content: string;
@@ -60,7 +61,7 @@ export default function CodeEditorSurface({
   if (markdownPreview && isMarkdownFile) {
     return (
       <div className="h-full overflow-y-auto bg-white dark:bg-gray-900">
-        <div className="prose prose-sm mx-auto max-w-4xl px-8 py-6 dark:prose-invert prose-headings:font-semibold prose-a:text-blue-600 prose-code:text-sm prose-pre:bg-gray-900 prose-img:rounded-lg dark:prose-a:text-blue-400">
+        <div className="prose prose-sm mx-auto max-w-4xl px-8 py-6 dark:prose-invert prose-headings:font-semibold prose-a:text-link prose-code:text-sm prose-pre:bg-gray-900 prose-img:rounded-lg">
           <MarkdownPreview content={content} />
         </div>
       </div>
@@ -73,7 +74,7 @@ export default function CodeEditorSurface({
       value={content}
       onChange={onChange}
       extensions={extensions}
-      theme={isDarkMode ? oneDark : undefined}
+      theme={isDarkMode ? monokaiTheme : undefined}
       height="100%"
       style={{
         fontSize: `${fontSize}px`,

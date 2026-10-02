@@ -4,7 +4,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTranslation } from 'react-i18next';
 
 import { MermaidDiagram } from '@/modules/code-editor';
@@ -13,6 +13,7 @@ import { normalizeInlineCodeFences } from '@/modules/chat/utils/chatFormatting';
 import { normalizeLatexDelimiters } from '@/modules/chat/utils/latexDelimiters';
 import { copyTextToClipboard } from '@/shared/utils';
 import { SyntaxHighlighter } from '@/shared/syntaxHighlighter';
+import { MONOKAI_SYNTAX_THEME } from '@/shared/constants';
 import { usePaletteOps } from '@/modules/command-palette';
 import { buildSyntaxTheme } from '@/modules/chat/utils/syntaxHighlightTheme';
 import type { PrismStyleSheet } from '@/modules/chat/utils/syntaxHighlightTheme';
@@ -114,7 +115,7 @@ const CodeBlock = ({ node: _node, className, children, forceBlock, ...props }: C
   }
 
   return (
-    <div className="group my-3 overflow-hidden rounded-xl border border-border bg-muted/50 shadow-sm dark:bg-zinc-900">
+    <div className="group my-3 overflow-hidden rounded-xl border border-border bg-muted/50 shadow-sm dark:bg-zinc-950">
       {/* Label row shares the block's background — no divider, ChatGPT-style */}
       <div className="flex items-center justify-between px-4 pt-2">
         <span className="select-none text-xs text-muted-foreground">{languageLabel}</span>
@@ -191,7 +192,7 @@ const CodeBlock = ({ node: _node, className, children, forceBlock, ...props }: C
  * re-tokenized every mounted code block, so the theme-dependent values are CSS
  * variables and the toggle is a style recalculation instead.
  */
-const syntaxTheme = buildSyntaxTheme(oneLight as PrismStyleSheet, oneDark as PrismStyleSheet);
+const syntaxTheme = buildSyntaxTheme(oneLight as PrismStyleSheet, MONOKAI_SYNTAX_THEME as PrismStyleSheet);
 
 // The `:root`/`.dark` declarations backing syntaxTheme.style. Injected once
 // because the values are derived from the Prism theme objects at runtime and so
@@ -298,7 +299,7 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
           return (
             <a
               href={href || fileRef}
-              className="cursor-pointer text-blue-600 hover:underline dark:text-blue-400"
+              className="cursor-pointer text-link hover:underline"
               onClick={(event) => {
                 event.preventDefault();
                 // Normalized once for every branch below: the href arrives
@@ -321,7 +322,7 @@ function MarkdownBodyRenderer({ children, breaks = false }: Omit<MarkdownProps, 
         return (
           <a
             href={href}
-            className="text-blue-600 hover:underline dark:text-blue-400"
+            className="text-link hover:underline"
             target="_blank"
             rel="noopener noreferrer"
           >

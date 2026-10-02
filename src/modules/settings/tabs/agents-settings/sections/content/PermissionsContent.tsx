@@ -121,7 +121,7 @@ function ClaudePermissions({
 
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Shield className="h-5 w-5 text-green-500" />
+          <Shield className="h-5 w-5 text-link" />
           <h3 className="text-lg font-medium text-foreground">{t('permissions.allowedTools.title')}</h3>
         </div>
         <p className="text-sm text-muted-foreground">{t('permissions.allowedTools.description')}</p>
@@ -332,7 +332,7 @@ function CursorPermissions({
 
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Shield className="h-5 w-5 text-green-500" />
+          <Shield className="h-5 w-5 text-link" />
           <h3 className="text-lg font-medium text-foreground">{t('permissions.allowedCommands.title')}</h3>
         </div>
         <p className="text-sm text-muted-foreground">{t('permissions.allowedCommands.description')}</p>
@@ -484,14 +484,14 @@ function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<Codex
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Shield className="h-5 w-5 text-green-500" />
+          <Shield className="h-5 w-5 text-link" />
           <h3 className="text-lg font-medium text-foreground">{t('permissions.codex.permissionMode')}</h3>
         </div>
         <p className="text-sm text-muted-foreground">{t('permissions.codex.description')}</p>
 
         <div
           className={`cursor-pointer rounded-lg border p-4 transition-all ${permissionMode === 'default'
-            ? 'border-border bg-accent'
+            ? 'border-primary/40 bg-primary/5'
             : 'border-border bg-card/50 active:border-border active:bg-accent/50'
             }`}
           onClick={() => onPermissionModeChange('default')}
@@ -502,7 +502,7 @@ function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<Codex
               name="codexPermissionMode"
               checked={permissionMode === 'default'}
               onChange={() => onPermissionModeChange('default')}
-              className="mt-1 h-4 w-4 text-green-600"
+              className="mt-1 h-4 w-4 accent-primary"
             />
             <div>
               <div className="font-medium text-foreground">{t('permissions.codex.modes.default.title')}</div>
@@ -515,7 +515,7 @@ function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<Codex
 
         <div
           className={`cursor-pointer rounded-lg border p-4 transition-all ${permissionMode === 'acceptEdits'
-            ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
+            ? 'border-primary/40 bg-primary/5'
             : 'border-border bg-card/50 active:border-border active:bg-accent/50'
             }`}
           onClick={() => onPermissionModeChange('acceptEdits')}
@@ -526,11 +526,11 @@ function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<Codex
               name="codexPermissionMode"
               checked={permissionMode === 'acceptEdits'}
               onChange={() => onPermissionModeChange('acceptEdits')}
-              className="mt-1 h-4 w-4 text-green-600"
+              className="mt-1 h-4 w-4 accent-primary"
             />
             <div>
-              <div className="font-medium text-green-900 dark:text-green-100">{t('permissions.codex.modes.acceptEdits.title')}</div>
-              <div className="text-sm text-green-700 dark:text-green-300">
+              <div className="font-medium text-foreground">{t('permissions.codex.modes.acceptEdits.title')}</div>
+              <div className="text-sm text-muted-foreground">
                 {t('permissions.codex.modes.acceptEdits.description')}
               </div>
             </div>

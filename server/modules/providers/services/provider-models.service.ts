@@ -75,9 +75,9 @@ const isUniqueConstraintError = (error: unknown): boolean => (
  * Creates the provider model application service used by Providers routes,
  * Commands, and provider runtimes.
  *
- * Curated adapter definitions stay source-controlled and are merged at read
- * time with custom SQLite rows. This deliberately has no predefined-model
- * persistence, memory cache, disk cache, TTL, or provider-native discovery.
+ * Curated adapter definitions reflect the configured deployment and are merged
+ * at read time with custom SQLite rows. Predefined models are not persisted or
+ * discovered through provider requests.
  * Tests inject a small custom-model store through the same boundary.
  */
 export const createProviderModelsService = (dependencies: ProviderModelsServiceDependencies = {}) => {
@@ -88,6 +88,13 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
   const getProviderModels = async (provider: LLMProvider): Promise<ProviderModelsDefinition> => {
     const predefined = await resolveProvider(provider).models.getSupportedModels();
     return mergeProviderModels(predefined, catalog.listCustomProviderModels(provider));
+  };
+
+  const resolveModelId = async (provider: LLMProvider, model: string): Promise<string> => {
+    const models = await getProviderModels(provider);
+    // An exact custom ID takes priority over a legacy spelling in the catalog.
+    if (models.OPTIONS.some((option) => option.value === model)) return model;
+    return models.OPTIONS.find((option) => option.aliases?.includes(model))?.value ?? model;
   };
 
   const getCurrentActiveModel = async (
@@ -116,7 +123,7 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
     modelId: string,
     currentRecordId?: number,
   ): void => {
-    if (predefined.OPTIONS.some((option) => option.value === modelId)) {
+    if (predefined.OPTIONS.some((option) => option.value === modelId || option.aliases?.includes(modelId))) {
       throw new AppError(`A ${provider} model with this ID already exists.`, {
         code: 'MODEL_ID_ALREADY_EXISTS',
         statusCode: 409,
@@ -234,14 +241,14 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
    * than treated as an error: the client keeps its own pending selection and
    * the value lands on the row with the first send.
    */
-  const setSessionModel = (
+  const setSessionModel = async (
     provider: LLMProvider,
     sessionId: string,
     model: string,
-  ): ProviderSessionModel | null => {
+  ): Promise<ProviderSessionModel | null> => {
     const normalizedSessionId = sessionId.trim();
-    const normalizedModel = model.trim();
-    if (!normalizedSessionId || !normalizedModel) {
+    const requestedModel = model.trim();
+    if (!normalizedSessionId || !requestedModel) {
       return null;
     }
 
@@ -250,6 +257,7 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
       return null;
     }
 
+    const normalizedModel = await resolveModelId(provider, requestedModel);
     sessions.setSessionModel(normalizedSessionId, normalizedModel);
     return {
       provider,
@@ -315,7 +323,7 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
         return {
           provider,
           sessionId: normalizedSessionId,
-          model: recordedSelection.model,
+          model: await resolveModelId(provider, recordedSelection.model),
           effort: recordedSelection.effort,
           source: 'session',
         };
@@ -328,7 +336,7 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
         return {
           provider,
           sessionId: normalizedSessionId,
-          model: resolvedProviderModel,
+          model: await resolveModelId(provider, resolvedProviderModel),
           effort: recordedSelection?.effort ?? null,
           source: 'provider',
         };
@@ -337,7 +345,9 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
       return {
         provider,
         sessionId: normalizedSessionId,
-        model: normalizedRequestedModel || providerCatalog.DEFAULT,
+        model: normalizedRequestedModel
+          ? await resolveModelId(provider, normalizedRequestedModel)
+          : providerCatalog.DEFAULT,
         effort: recordedSelection?.effort ?? null,
         source: normalizedRequestedModel ? 'session' : 'default',
       };
@@ -347,7 +357,7 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
       return {
         provider,
         sessionId: null,
-        model: normalizedRequestedModel,
+        model: await resolveModelId(provider, normalizedRequestedModel),
         effort: null,
         source: 'session',
       };
@@ -374,15 +384,15 @@ export const createProviderModelsService = (dependencies: ProviderModelsServiceD
     sessionId: string | undefined,
     requestedModel?: string | null,
   ): Promise<string | undefined> => {
-    void provider;
     const normalizedRequestedModel = typeof requestedModel === 'string' ? requestedModel.trim() : '';
     const normalizedSessionId = sessionId?.trim();
     if (!normalizedSessionId) {
-      return normalizedRequestedModel || undefined;
+      return normalizedRequestedModel ? resolveModelId(provider, normalizedRequestedModel) : undefined;
     }
 
     const recordedModel = readRecordedSessionSelection(normalizedSessionId)?.model;
-    return recordedModel || normalizedRequestedModel || undefined;
+    const model = recordedModel || normalizedRequestedModel;
+    return model ? resolveModelId(provider, model) : undefined;
   };
 
   return {

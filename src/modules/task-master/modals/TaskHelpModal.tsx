@@ -89,7 +89,7 @@ export default function TaskHelpModal({ isOpen, onClose, onCreatePrd }: TaskHelp
                         onCreatePrd();
                         onClose();
                       }}
-                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-100 px-3 py-1.5 text-sm text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-1.5 text-sm text-link hover:bg-primary/20"
                     >
                       <FileText className="h-4 w-4" />
                       {t('buttons.addPRD')}
@@ -117,7 +117,7 @@ export default function TaskHelpModal({ isOpen, onClose, onCreatePrd }: TaskHelp
               href="https://github.com/eyaltoledano/claude-task-master"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               {t('helpGuide.learnMore.githubButton')}
               <ExternalLink className="h-4 w-4" />

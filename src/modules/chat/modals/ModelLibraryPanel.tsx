@@ -193,7 +193,7 @@ export default function ModelLibraryPanel({
               aria-pressed={selected}
               className={`flex min-w-fit flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
                 selected
-                  ? 'bg-background text-foreground shadow-sm ring-1 ring-border/70'
+                  ? 'bg-primary/10 text-link shadow-sm ring-1 ring-primary/20'
                   : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
               }`}
             >

@@ -75,6 +75,8 @@ export type ProviderModelOption = {
   value: string;
   label: string;
   description?: string;
+  /** Previous IDs for this same model; resolve these to `value` before saving or running a selection. */
+  aliases?: string[];
   /** Stable SQLite row id used only by model-management actions. */
   recordId?: number;
   /** True for user-created rows; false for immutable CloudCLI defaults. */

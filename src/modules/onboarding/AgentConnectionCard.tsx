@@ -53,7 +53,7 @@ export default function AgentConnectionCard({
         {!status.authenticated && !status.loading && (
           <button
             onClick={onLogin}
-            className={`${loginButtonClassName} flex-shrink-0 rounded-lg px-4 py-1.5 text-sm font-medium text-white transition-colors`}
+            className={`${loginButtonClassName} flex-shrink-0 rounded-lg px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
           >
             {t('onboarding.login')}
           </button>

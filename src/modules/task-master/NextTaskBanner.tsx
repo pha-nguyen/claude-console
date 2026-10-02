@@ -92,7 +92,7 @@ export default function NextTaskBanner({ onShowAllTasks = null, onStartTask = nu
 
             <button
               onClick={() => setShowSetupModal(true)}
-              className="flex items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs text-white transition-colors hover:bg-blue-700"
+              className="flex items-center gap-1 rounded bg-primary px-2 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Terminal className="h-3 w-3" />
               {t('tasks:banner.initialize')}
@@ -101,7 +101,7 @@ export default function NextTaskBanner({ onShowAllTasks = null, onStartTask = nu
 
           <button
             onClick={() => setShowSetupDetails((current) => !current)}
-            className="mt-2 flex items-center gap-1 text-xs text-blue-700 hover:underline dark:text-blue-300"
+            className="mt-2 flex items-center gap-1 text-xs text-link hover:underline"
           >
             <Settings className="h-3 w-3" />
             {showSetupDetails ? t('tasks:banner.hideDetails') : t('tasks:banner.whatIsTaskmaster')}
@@ -145,7 +145,7 @@ export default function NextTaskBanner({ onShowAllTasks = null, onStartTask = nu
             <div className="flex flex-shrink-0 items-center gap-1">
               <button
                 onClick={() => onStartTask?.()}
-                className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               >
                 <Play className="h-3 w-3" />
                 {t('tasks:banner.startTask')}
@@ -188,10 +188,10 @@ export default function NextTaskBanner({ onShowAllTasks = null, onStartTask = nu
     const completedTasks = tasks.filter((task) => task.status === 'done').length;
 
     return (
-      <div className={cn('bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-3 mb-4', className)}>
+      <div className={cn('bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4', className)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+            <CheckCircle className="h-4 w-4 text-link" />
             <span className="text-sm font-medium text-gray-900 dark:text-white">
               {completedTasks === tasks.length ? t('tasks:banner.allComplete') : t('tasks:banner.noPending')}
             </span>
@@ -203,7 +203,7 @@ export default function NextTaskBanner({ onShowAllTasks = null, onStartTask = nu
             {onShowAllTasks && (
               <button
                 onClick={onShowAllTasks}
-                className="rounded bg-purple-600 px-2 py-1 text-xs text-white transition-colors hover:bg-purple-700"
+                className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Review
               </button>

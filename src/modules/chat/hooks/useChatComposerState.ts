@@ -31,6 +31,7 @@ import { describeBackgroundTask, ownBackgroundTasks } from '@/modules/chat/utils
 import { useFileMentions } from '@/modules/chat/hooks/useFileMentions';
 import { useInputHistory } from '@/modules/chat/hooks/useInputHistory';
 import { useSlashCommands } from '@/modules/chat/hooks/useSlashCommands';
+import { handleMacTextareaNavigation } from '@/modules/chat/utils/macTextareaNavigation';
 
 type UseChatComposerStateArgs = {
   selectedProject: Project | null;
@@ -1146,6 +1147,12 @@ export function useChatComposerState({
         return;
       }
 
+      if (!isComposingRef.current && handleMacTextareaNavigation(event)) {
+        setCursorPosition(event.currentTarget.selectionStart);
+        syncInputOverlayScroll(event.currentTarget);
+        return;
+      }
+
       if (event.key === 'Tab' && !showFileDropdown && !showCommandMenu) {
         event.preventDefault();
         cyclePermissionMode();
@@ -1175,8 +1182,10 @@ export function useChatComposerState({
       handleHistoryKeyDown,
       handleSubmit,
       sendByCtrlEnter,
+      setCursorPosition,
       showCommandMenu,
       showFileDropdown,
+      syncInputOverlayScroll,
     ],
   );
 

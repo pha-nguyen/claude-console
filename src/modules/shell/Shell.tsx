@@ -29,6 +29,7 @@ type ShellProps = {
   selectedProject?: Project | null;
   selectedSession?: ProjectSession | null;
   initialCommand?: string | null;
+  initialCommandLabel?: string | null;
   isPlainShell?: boolean;
   onProcessComplete?: ((exitCode: number) => void) | null;
   minimal?: boolean;
@@ -41,6 +42,7 @@ export default function Shell({
   selectedProject = null,
   selectedSession = null,
   initialCommand = null,
+  initialCommandLabel = null,
   isPlainShell = false,
   onProcessComplete = null,
   minimal = false,
@@ -277,7 +279,7 @@ export default function Shell({
 
   const readyDescription = isPlainShell
     ? t('shell.runCommand', {
-        command: initialCommand || t('shell.defaultCommand'),
+        command: initialCommandLabel || initialCommand || t('shell.defaultCommand'),
         projectName: selectedProject.displayName,
       })
     : selectedSession
@@ -286,7 +288,7 @@ export default function Shell({
 
   const connectingDescription = isPlainShell
     ? t('shell.runCommand', {
-        command: initialCommand || t('shell.defaultCommand'),
+        command: initialCommandLabel || initialCommand || t('shell.defaultCommand'),
         projectName: selectedProject.displayName,
       })
     : t('shell.startCli', { projectName: selectedProject.displayName });
@@ -304,7 +306,7 @@ export default function Shell({
         sessionDisplayNameShort={sessionDisplayNameShort}
         onDisconnect={handleDisconnectShell}
         onRestart={handleRestartShell}
-        statusNewSessionText={t('shell.status.newSession')}
+        statusNewSessionText={initialCommandLabel || t('shell.status.newSession')}
         statusInitializingText={t('shell.status.initializing')}
         statusRestartingText={t('shell.status.restarting')}
         disconnectLabel={t('shell.actions.disconnect')}
@@ -333,7 +335,9 @@ export default function Shell({
             mode={overlayMode}
             description={overlayDescription}
             loadingLabel={t('shell.loading')}
-            connectLabel={t('shell.actions.connect')}
+            connectLabel={initialCommandLabel
+              ? t('shell.actions.connectCommand', { command: initialCommandLabel })
+              : t('shell.actions.connect')}
             connectTitle={t('shell.actions.connectTitle')}
             connectingLabel={t('shell.connecting')}
             onConnect={handleRestartShell}
@@ -354,7 +358,7 @@ export default function Shell({
                     sendInput(opt.number);
                     setCliPromptOptions(null);
                   }}
-                  className="max-w-36 truncate rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+                  className="max-w-36 truncate rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   title={`${opt.number}. ${opt.label}`}
                 >
                   {opt.number}. {opt.label}

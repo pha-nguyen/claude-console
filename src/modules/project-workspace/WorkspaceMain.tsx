@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, type Dispatch, type SetStateAction, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { ChatInterface } from '@/modules/chat';
 import { FileTree } from '@/modules/file-tree';
@@ -15,6 +16,10 @@ import { EditorSidebar, useEditorSidebar } from '@/modules/code-editor';
 import WorkspaceHeader from '@/modules/project-workspace/WorkspaceHeader';
 import WorkspaceStateView from '@/modules/project-workspace/WorkspaceStateView';
 import WorkspaceErrorBoundary from '@/modules/project-workspace/WorkspaceErrorBoundary';
+
+// Expand the host's shell setting in the existing plain-shell runner. Its command key
+// keeps this retained PTY separate from the agent Shell, even before a chat exists.
+const DEFAULT_TERMINAL_COMMAND = 'exec "${SHELL:-bash}" -i';
 
 type WorkspaceMainProps = {
   selectedProject: Project | null;
@@ -39,7 +44,7 @@ type WorkspaceMainProps = {
   onRenameSession: (sessionId: string, summary: string) => Promise<boolean>;
 };
 
-/** Rendered by ProjectMainRegion to show the selected project's active tab: chat, files, shell, git, tasks, browser or a plugin. */
+/** Rendered by ProjectMainRegion to show the selected project's active tab: chat, terminal, files, shell, git, tasks, browser or a plugin. */
 function WorkspaceMain({
   selectedProject,
   selectedSession,
@@ -59,6 +64,7 @@ function WorkspaceMain({
   onProjectsRefresh,
   onRenameSession,
 }: WorkspaceMainProps) {
+  const { t } = useTranslation();
   const preferences = useUiPreferences();
   const { showRawParameters, showThinking, sendByCtrlEnter } = preferences;
 
@@ -72,6 +78,7 @@ function WorkspaceMain({
 
   const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
   const shouldShowBrowserTab = browserUseEnabled;
+  const isTerminal = activeTab === 'terminal';
 
   const {
     editingFile,
@@ -189,13 +196,17 @@ function WorkspaceMain({
             </div>
           )}
 
-          {activeTab === 'shell' && (
+          {(isTerminal || activeTab === 'shell') && (
             <div className="h-full w-full overflow-hidden">
               <StandaloneShell
+                key={`${selectedProject.projectId}:${activeTab}`}
                 project={selectedProject}
-                session={selectedSession}
+                session={isTerminal ? null : selectedSession}
+                command={isTerminal ? DEFAULT_TERMINAL_COMMAND : null}
+                commandLabel={isTerminal ? t('tabs.terminal') : null}
+                isPlainShell={isTerminal}
                 showHeader={false}
-                isActive={activeTab === 'shell'}
+                isActive
               />
             </div>
           )}

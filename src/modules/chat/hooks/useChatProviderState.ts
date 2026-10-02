@@ -31,7 +31,9 @@ const toProviderEffortOptions = (
 const FALLBACK_DEFAULT_MODEL: Record<LLMProvider, string> = {
   claude: 'default',
   cursor: 'gpt-5.3-codex',
-  codex: 'gpt-5.4',
+  // Codex IDs depend on the deployment. Let the backend catalog/config choose
+  // the initial model instead of sending a direct OpenAI ID to Bedrock.
+  codex: '',
   opencode: 'anthropic/claude-sonnet-4-5',
 };
 
@@ -292,11 +294,15 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     def: ProviderModelsDefinition,
   ): string => {
     const stored = localStorage.getItem(storageKey);
-    if (stored && def.OPTIONS.some((o) => o.value === stored)) {
-      return stored;
+    const storedOption = def.OPTIONS.find((option) => option.value === stored)
+      ?? def.OPTIONS.find((option) => stored && option.aliases?.includes(stored));
+    if (storedOption) {
+      return storedOption.value;
     }
-    if (current && def.OPTIONS.some((o) => o.value === current)) {
-      return current;
+    const currentOption = def.OPTIONS.find((option) => option.value === current)
+      ?? def.OPTIONS.find((option) => current && option.aliases?.includes(current));
+    if (currentOption) {
+      return currentOption.value;
     }
     return def.DEFAULT;
   };
@@ -310,7 +316,9 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
       return null;
     }
 
-    return definition.OPTIONS.find((option) => option.value === model) ?? null;
+    return definition.OPTIONS.find((option) => option.value === model)
+      ?? definition.OPTIONS.find((option) => option.aliases?.includes(model))
+      ?? null;
   }, [providerModelCatalog]);
 
   const getEffortOptionsForModel = useCallback((
@@ -689,7 +697,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
 
   // The open session's model wins over the per-provider default, so switching
   // sessions shows (and sends) what each session actually runs with.
-  const currentProviderModel = sessionModel ?? providerModels[provider];
+  const selectedModel = sessionModel ?? providerModels[provider];
+  const currentProviderModel = getModelOption(provider, selectedModel)?.value ?? selectedModel;
   const currentProviderEffortOptions = useMemo(() => {
     return getEffortOptionsForModel(provider, currentProviderModel);
   }, [currentProviderModel, getEffortOptionsForModel, provider]);

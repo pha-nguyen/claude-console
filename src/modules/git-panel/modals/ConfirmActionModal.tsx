@@ -27,23 +27,23 @@ const CONFIRMATION_ACTION_LABELS: Record<ConfirmActionType, string> = {
 };
 
 const CONFIRMATION_BUTTON_CLASSES: Record<ConfirmActionType, string> = {
-  discard: 'bg-red-600 hover:bg-red-700',
-  delete: 'bg-red-600 hover:bg-red-700',
-  commit: 'bg-primary hover:bg-primary/90',
-  pull: 'bg-green-600 hover:bg-green-700',
-  push: 'bg-orange-600 hover:bg-orange-700',
-  publish: 'bg-purple-600 hover:bg-purple-700',
-  revertLocalCommit: 'bg-yellow-600 hover:bg-yellow-700',
-  deleteBranch: 'bg-red-600 hover:bg-red-700',
+  discard: 'bg-red-600 text-white hover:bg-red-700',
+  delete: 'bg-red-600 text-white hover:bg-red-700',
+  commit: 'bg-primary text-primary-foreground hover:bg-primary/90',
+  pull: 'bg-primary text-primary-foreground hover:bg-primary/90',
+  push: 'bg-primary text-primary-foreground hover:bg-primary/90',
+  publish: 'bg-primary text-primary-foreground hover:bg-primary/90',
+  revertLocalCommit: 'bg-yellow-600 text-white hover:bg-yellow-700',
+  deleteBranch: 'bg-red-600 text-white hover:bg-red-700',
 };
 
 const CONFIRMATION_ICON_CONTAINER_CLASSES: Record<ConfirmActionType, string> = {
   discard: 'bg-red-100 dark:bg-red-900/30',
   delete: 'bg-red-100 dark:bg-red-900/30',
-  commit: 'bg-yellow-100 dark:bg-yellow-900/30',
-  pull: 'bg-yellow-100 dark:bg-yellow-900/30',
-  push: 'bg-yellow-100 dark:bg-yellow-900/30',
-  publish: 'bg-yellow-100 dark:bg-yellow-900/30',
+  commit: 'bg-primary/10 text-link',
+  pull: 'bg-primary/10 text-link',
+  push: 'bg-primary/10 text-link',
+  publish: 'bg-primary/10 text-link',
   revertLocalCommit: 'bg-yellow-100 dark:bg-yellow-900/30',
   deleteBranch: 'bg-red-100 dark:bg-red-900/30',
 };
@@ -174,7 +174,7 @@ export default function ConfirmActionModal({ action, onCancel, onConfirm }: Conf
           </button>
           <button
             onClick={handleConfirm}
-            className={`flex items-center space-x-2 rounded-lg px-4 py-2 text-sm text-white transition-colors ${CONFIRMATION_BUTTON_CLASSES[action.type]}`}
+            className={`flex items-center space-x-2 rounded-lg px-4 py-2 text-sm transition-colors ${CONFIRMATION_BUTTON_CLASSES[action.type]}`}
           >
             {renderConfirmActionIcon(action.type)}
             <span>

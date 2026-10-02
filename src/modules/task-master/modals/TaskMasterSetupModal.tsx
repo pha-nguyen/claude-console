@@ -90,7 +90,7 @@ export default function TaskMasterSetupModal({ isOpen, project, onClose, onAfter
               className={cn(
                 'px-4 py-2 text-sm font-medium rounded-md transition-colors',
                 isTaskMasterComplete
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
                   : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600',
               )}
             >

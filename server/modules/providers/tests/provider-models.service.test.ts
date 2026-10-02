@@ -104,6 +104,7 @@ const createTestService = (options: {
   sessions?: ReturnType<typeof createSessionStore>;
   activeModel?: (provider: LLMProvider, sessionId?: string) => string;
   onCatalogRead?: (provider: LLMProvider) => void;
+  predefined?: ProviderModelsDefinition;
 } = {}) => {
   const catalog = options.catalog ?? createCatalogStore();
   const sessions = options.sessions ?? createSessionStore();
@@ -114,7 +115,7 @@ const createTestService = (options: {
       models: {
         getSupportedModels: async () => {
           options.onCatalogRead?.(provider);
-          return createModels(`${provider}-default`);
+          return options.predefined ?? createModels(`${provider}-default`);
         },
         getCurrentActiveModel: async (sessionId) => createCurrentActiveModel(
           options.activeModel?.(provider, sessionId) ?? `${provider}-default`,
@@ -216,11 +217,11 @@ test('resolveSessionModel asks the provider adapter for the requested session', 
   assert.equal(resolved.model, 'opencode-session-123');
 });
 
-test('setSessionModel records the model on the session row', () => {
+test('setSessionModel records the model on the session row', async () => {
   const sessions = createSessionStore({ 'session-1': null });
   const { service } = createTestService({ sessions });
 
-  const stored = service.setSessionModel('claude', 'session-1', 'opus');
+  const stored = await service.setSessionModel('claude', 'session-1', 'opus');
 
   assert.deepEqual(stored, {
     provider: 'claude',
@@ -232,11 +233,11 @@ test('setSessionModel records the model on the session row', () => {
   assert.equal(sessions.sessions.get('session-1')?.model, 'opus');
 });
 
-test('setSessionModel ignores sessions that have no row yet', () => {
+test('setSessionModel ignores sessions that have no row yet', async () => {
   const sessions = createSessionStore();
   const { service } = createTestService({ sessions });
 
-  assert.equal(service.setSessionModel('claude', 'missing-session', 'opus'), null);
+  assert.equal(await service.setSessionModel('claude', 'missing-session', 'opus'), null);
   assert.equal(sessions.sessions.size, 0);
 });
 
@@ -350,4 +351,44 @@ test('resolveResumeModel never consults provider-global state', async () => {
 
   assert.equal(model, 'gpt-5.5');
   assert.equal(providerLookups, 0);
+});
+
+const BEDROCK_MODELS: ProviderModelsDefinition = {
+  OPTIONS: [{ value: 'openai.gpt-6-astra', label: 'GPT-6 Astra', aliases: ['gpt-6-astra'] }],
+  DEFAULT: 'openai.gpt-6-astra',
+};
+
+test('legacy model IDs are normalized when saving, displaying, and resuming a session', async () => {
+  const { service, sessions } = createTestService({
+    predefined: BEDROCK_MODELS,
+    sessions: createSessionStore({ legacy: 'gpt-6-astra', selected: null }),
+  });
+
+  const saved = await service.setSessionModel('codex', 'selected', ' gpt-6-astra ');
+  assert.equal(saved?.model, 'openai.gpt-6-astra');
+  assert.equal(sessions.sessions.get('selected')?.model, 'openai.gpt-6-astra');
+  assert.equal((await service.resolveSessionModel('codex', { sessionId: 'legacy' })).model, 'openai.gpt-6-astra');
+  assert.equal(await service.resolveResumeModel('codex', 'legacy', 'other-model'), 'openai.gpt-6-astra');
+  assert.equal(await service.resolveResumeModel('codex', undefined, 'gpt-6-astra'), 'openai.gpt-6-astra');
+});
+
+test('new sessions resolve the deployment default and normalize explicit legacy choices', async () => {
+  const { service } = createTestService({ predefined: BEDROCK_MODELS });
+  assert.equal((await service.resolveSessionModel('codex')).model, 'openai.gpt-6-astra');
+  assert.equal((await service.resolveSessionModel('codex', { requestedModel: 'gpt-6-astra' })).model, 'openai.gpt-6-astra');
+});
+
+test('canonical and custom model IDs are preserved rather than prefixed again', async () => {
+  const { service } = createTestService({ predefined: BEDROCK_MODELS });
+  for (const model of ['openai.gpt-6-astra', 'custom-inference-profile', 'arn:aws:bedrock:us-west-2:123:application-inference-profile/test']) {
+    assert.equal(await service.resolveResumeModel('codex', undefined, model), model);
+  }
+});
+
+test('a legacy built-in spelling cannot be reintroduced as a custom model', async () => {
+  const { service } = createTestService({ predefined: BEDROCK_MODELS });
+  await assert.rejects(
+    () => service.createCustomModel('codex', { id: 'gpt-6-astra', model: 'Legacy Astra' }),
+    (error) => error instanceof AppError && error.code === 'MODEL_ID_ALREADY_EXISTS',
+  );
 });

@@ -1,3 +1,12 @@
+// Match legacy neutral utilities to the app's Monokai surfaces.
+const MONOKAI_NEUTRALS = {
+  50: '#fafaf6', 100: '#f8f8f2', 200: '#e6e6dc', 300: '#cfcfc2',
+  400: '#a6a69a', 500: '#8f9084', 600: '#75766a', 700: '#494b40',
+  800: '#34352e', 900: '#272822', 950: '#1e1f1c',
+};
+
+const UI_FONT_FAMILY = ['"Encode Sans"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'];
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
@@ -15,10 +24,17 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['"Encode Sans"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
-        serif: ['Merriweather', 'Georgia', 'Cambria', '"Times New Roman"', 'serif'],
+        sans: UI_FONT_FAMILY,
+        // Upstream headings and chat still use font-serif; render them in the same sans family.
+        serif: UI_FONT_FAMILY,
       },
       colors: {
+        gray: MONOKAI_NEUTRALS,
+        zinc: MONOKAI_NEUTRALS,
+        neutral: MONOKAI_NEUTRALS,
+        slate: MONOKAI_NEUTRALS,
+        stone: MONOKAI_NEUTRALS,
+        link: "hsl(var(--link))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

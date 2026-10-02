@@ -123,7 +123,7 @@ export default function FileTreeNode({
     isDirectory && isOpen && 'border-l-2 border-primary/30',
     (isDirectory && !isOpen) || !isDirectory ? 'border-l-2 border-transparent' : '',
     'relative',
-    isDropTarget && 'bg-blue-500/10 ring-1 ring-inset ring-blue-500/40',
+    isDropTarget && 'bg-primary/10 ring-1 ring-inset ring-primary/40',
   );
 
   // Render rename input if this item is being renamed

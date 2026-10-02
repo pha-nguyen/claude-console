@@ -1,7 +1,88 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import type { Extension } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
+import { tags } from '@lezer/highlight';
 
+import { MONOKAI_COLORS } from '@/shared/constants';
 import type { Project, ProjectSession, QuickSettingsTab, SlashCommand } from '@/shared/types';
+
+//----------------- CODE EDITOR THEME ------------
+
+/** Builds the Monokai extension shared by the code-editor and prd-editor modules. */
+export const createMonokaiEditorTheme = (): Extension => [
+  EditorView.theme({
+    '&': {
+      color: MONOKAI_COLORS.foreground,
+      backgroundColor: MONOKAI_COLORS.background,
+    },
+    '.cm-content': { caretColor: MONOKAI_COLORS.foreground },
+    '.cm-scroller': {
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: MONOKAI_COLORS.foreground },
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: MONOKAI_COLORS.selection,
+    },
+    '.cm-panels': {
+      backgroundColor: MONOKAI_COLORS.surface,
+      color: MONOKAI_COLORS.foreground,
+    },
+    '.cm-searchMatch': {
+      backgroundColor: `${MONOKAI_COLORS.yellow}30`,
+      outline: `1px solid ${MONOKAI_COLORS.yellow}90`,
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: `${MONOKAI_COLORS.orange}50`,
+    },
+    '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: MONOKAI_COLORS.panel },
+    '.cm-selectionMatch': { backgroundColor: `${MONOKAI_COLORS.green}25` },
+    '&.cm-focused .cm-matchingBracket': {
+      backgroundColor: MONOKAI_COLORS.selection,
+      outline: `1px solid ${MONOKAI_COLORS.comment}`,
+    },
+    '&.cm-focused .cm-nonmatchingBracket': { color: MONOKAI_COLORS.pink },
+    '.cm-gutters': {
+      backgroundColor: MONOKAI_COLORS.background,
+      color: MONOKAI_COLORS.comment,
+      border: 'none',
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: MONOKAI_COLORS.panel,
+      color: MONOKAI_COLORS.comment,
+      border: 'none',
+    },
+    '.cm-tooltip': {
+      backgroundColor: MONOKAI_COLORS.panel,
+      color: MONOKAI_COLORS.foreground,
+      border: `1px solid ${MONOKAI_COLORS.border}`,
+    },
+    '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+      backgroundColor: MONOKAI_COLORS.selection,
+      color: 'hsl(var(--link))',
+    },
+  }, { dark: true }),
+  syntaxHighlighting(HighlightStyle.define([
+    { tag: [tags.keyword, tags.operator, tags.operatorKeyword, tags.tagName], color: MONOKAI_COLORS.pink },
+    { tag: [tags.name, tags.punctuation], color: MONOKAI_COLORS.foreground },
+    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.attributeName], color: MONOKAI_COLORS.green },
+    { tag: [tags.string, tags.character, tags.attributeValue], color: MONOKAI_COLORS.yellow },
+    { tag: [tags.typeName, tags.className, tags.standard(tags.name)], color: MONOKAI_COLORS.cyan },
+    { tag: [tags.number, tags.bool, tags.atom, tags.constant(tags.name)], color: MONOKAI_COLORS.purple },
+    { tag: [tags.regexp, tags.escape, tags.annotation], color: MONOKAI_COLORS.orange },
+    { tag: [tags.comment, tags.meta], color: MONOKAI_COLORS.comment },
+    { tag: tags.heading, color: MONOKAI_COLORS.green, fontWeight: 'bold' },
+    { tag: tags.link, color: MONOKAI_COLORS.cyan, textDecoration: 'underline' },
+    { tag: tags.strong, fontWeight: 'bold' },
+    { tag: tags.emphasis, fontStyle: 'italic' },
+    { tag: tags.strikethrough, textDecoration: 'line-through' },
+    { tag: tags.inserted, color: MONOKAI_COLORS.green },
+    { tag: [tags.deleted, tags.invalid], color: MONOKAI_COLORS.pink },
+  ])),
+];
+
+// ---------------------------
 
 //----------------- DEPLOYMENT MODE ------------
 

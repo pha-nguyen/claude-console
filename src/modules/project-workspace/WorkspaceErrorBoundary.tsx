@@ -62,7 +62,7 @@ function ErrorFallback({
         <div className="mt-4">
           <button
             onClick={resetErrorBoundary}
-            className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring"
           >
             Try Again
           </button>

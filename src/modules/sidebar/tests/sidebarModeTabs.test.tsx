@@ -49,13 +49,25 @@ const renderTabs = (rowWidth: number, searchMode: SidebarSearchMode) => {
 };
 
 test('a wide row shows every tab and no overflow menu', () => {
-  renderTabs(400, 'projects');
+  renderTabs(400, 'conversations');
 
+  assert.deepEqual(screen.getAllByRole('button').slice(0, 2).map((button) => button.textContent), ['Conversations', 'Projects']);
+  assert.equal(screen.getByRole('button', { name: 'Conversations' }).getAttribute('aria-pressed'), 'true');
   assert.ok(screen.getByRole('button', { name: 'Projects' }));
   assert.ok(screen.getByRole('button', { name: 'Conversations' }));
   assert.ok(screen.getByRole('button', { name: 'Running sessions' }));
   assert.ok(screen.getByRole('button', { name: 'Archive only' }));
   assert.equal(screen.queryByRole('button', { name: 'More' }), null);
+});
+
+test('the default Conversations tab remains visible in a narrow sidebar', () => {
+  const changes = renderTabs(220, 'conversations');
+  assert.equal(screen.getByRole('button', { name: 'Conversations' }).getAttribute('aria-pressed'), 'true');
+  assert.equal(screen.queryByRole('button', { name: 'Projects' }), null);
+
+  fireEvent.click(screen.getByRole('button', { name: 'More' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Projects' }));
+  assert.deepEqual(changes, ['projects']);
 });
 
 test('a narrow row moves the tabs that no longer fit into the dropdown', () => {
@@ -79,6 +91,7 @@ test('the section on screen keeps its place in the row', () => {
   // is the open section, so the strip has to keep showing it as pressed.
   const archive = screen.getByRole('button', { name: 'Archive only' });
   assert.equal(archive.getAttribute('aria-pressed'), 'true');
-  assert.equal(screen.queryByRole('button', { name: 'Conversations' }), null);
+  assert.ok(screen.getByRole('button', { name: 'Conversations' }));
+  assert.equal(screen.queryByRole('button', { name: 'Projects' }), null);
   assert.ok(screen.getByRole('button', { name: 'More' }));
 });

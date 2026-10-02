@@ -79,8 +79,10 @@ export function ComposerMenuItem({
       onClick={onSelect}
       className={cn(
         'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors',
-        'hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
-        isSelected ? 'text-foreground' : 'text-foreground/90',
+        'focus-visible:outline-none',
+        isSelected
+          ? 'bg-primary/10 text-link hover:bg-primary/15 focus-visible:bg-primary/15'
+          : 'text-foreground/90 hover:bg-accent focus-visible:bg-accent',
         className,
       )}
     >
@@ -92,7 +94,7 @@ export function ComposerMenuItem({
         )}
       </span>
       <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
-        {trailing ?? (isSelected ? <Check className="h-3.5 w-3.5 text-foreground" /> : null)}
+        {trailing ?? (isSelected ? <Check className="h-3.5 w-3.5 text-link" /> : null)}
       </span>
     </button>
   );

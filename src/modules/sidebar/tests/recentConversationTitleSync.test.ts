@@ -52,6 +52,7 @@ const renderController = (initialProjects: Project[]) => renderHook(
     selectedProject: null,
     selectedSession: null,
     activeSessions: new Set<string>(),
+    backgroundSessionIds: new Set<string>(),
     isLoading: false,
     isMobile: false,
     t,
@@ -89,6 +90,21 @@ beforeEach(() => {
       },
     }),
   });
+});
+
+test('Conversations loads by default and is selected again after a remount', async () => {
+  const first = renderController([buildProject({ 'session-1': 'Original title' })]);
+  assert.equal(first.result.current.searchMode, 'conversations');
+  await waitFor(() => assert.equal(first.result.current.recentConversations.length, 2));
+
+  act(() => first.result.current.setSearchMode('projects'));
+  assert.equal(first.result.current.searchMode, 'projects');
+  first.unmount();
+
+  const reloaded = renderController([buildProject({ 'session-1': 'Original title' })]);
+  assert.equal(reloaded.result.current.searchMode, 'conversations');
+  await waitFor(() => assert.equal(reloaded.result.current.recentConversations.length, 2));
+  assert.equal(recentConversationsResponse.mock.calls.length, 2);
 });
 
 test('a title renamed in `projects` lands on the matching conversation row', async () => {

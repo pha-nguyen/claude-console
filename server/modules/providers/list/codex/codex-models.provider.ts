@@ -143,28 +143,86 @@ export const CODEX_PREDEFINED_MODELS: ProviderModelsDefinition = {
   DEFAULT: 'gpt-5.6-sol',
 };
 
-const CODEX_CONFIG_PATH = path.join(os.homedir(), '.codex', 'config.toml');
+// The bundled Codex CLI's amazon-bedrock model/list catalog. Bedrock does not
+// expose every model in the direct OpenAI catalog or the Ultra effort tier.
+const BEDROCK_CODEX_MODELS = new Set([
+  'gpt-6-astra',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+]);
 
 /** Provider registry model adapter for Codex predefined models and active config. */
 export class CodexProviderModels implements IProviderModels {
+  constructor(
+    private readonly configPath = path.join(
+      process.env.CODEX_HOME || path.join(os.homedir(), '.codex'),
+      'config.toml',
+    ),
+  ) {}
+
+  private async readConfiguration(): Promise<{ model?: string; modelProvider?: string }> {
+    try {
+      const parsed = readObjectRecord(TOML.parse(await readFile(this.configPath, 'utf8')));
+      const profiles = readObjectRecord(parsed?.profiles);
+      const profileName = readOptionalString(parsed?.profile);
+      const profile = profileName ? readObjectRecord(profiles?.[profileName]) : null;
+      return {
+        model: readOptionalString(profile?.model) || readOptionalString(parsed?.model),
+        modelProvider: readOptionalString(profile?.model_provider) || readOptionalString(parsed?.model_provider),
+      };
+    } catch {
+      return {};
+    }
+  }
+
   async getSupportedModels(): Promise<ProviderModelsDefinition> {
-    return CODEX_PREDEFINED_MODELS;
+    const configuration = await this.readConfiguration();
+    if (configuration.modelProvider !== 'amazon-bedrock') {
+      return CODEX_PREDEFINED_MODELS;
+    }
+
+    const options = CODEX_PREDEFINED_MODELS.OPTIONS
+      .filter((option) => BEDROCK_CODEX_MODELS.has(option.value))
+      .map((option) => ({
+        ...option,
+        value: `openai.${option.value}`,
+        aliases: [option.value],
+        effort: option.effort ? {
+          ...option.effort,
+          values: option.effort.values.filter((effort) => effort.value !== 'ultra'),
+        } : undefined,
+      }));
+    const configuredOption = options.find((option) =>
+      option.value === configuration.model || option.aliases.includes(configuration.model ?? ''));
+    const defaultModel = configuredOption?.value
+      || configuration.model
+      || `openai.${CODEX_PREDEFINED_MODELS.DEFAULT}`;
+
+    // Explicitly configured deployment IDs (including custom inference
+    // profiles) must remain selectable even when they are not curated here.
+    if (!options.some((option) => option.value === defaultModel)) {
+      options.push({
+        value: defaultModel,
+        label: defaultModel,
+        description: 'Configured Codex model',
+        aliases: [],
+        effort: undefined,
+      });
+    }
+
+    return { OPTIONS: options, DEFAULT: defaultModel };
   }
 
   async getCurrentActiveModel(): Promise<ProviderCurrentActiveModel> {
-    try {
-      const raw = await readFile(CODEX_CONFIG_PATH, 'utf8');
-      const parsed = readObjectRecord(TOML.parse(raw));
-      const model = readOptionalString(parsed?.model);
-      if (!model) {
-        return buildDefaultProviderCurrentActiveModel(await this.getSupportedModels());
-      }
+    const configuration = await this.readConfiguration();
+    const catalog = await this.getSupportedModels();
+    const model = configuration.model;
+    if (!model) return buildDefaultProviderCurrentActiveModel(catalog);
 
-      return {
-        model,
-      };
-    } catch {
-      return buildDefaultProviderCurrentActiveModel(await this.getSupportedModels());
-    }
+    const option = catalog.OPTIONS.find((entry) => entry.value === model || entry.aliases?.includes(model));
+    return { model: option?.value ?? model };
   }
 }

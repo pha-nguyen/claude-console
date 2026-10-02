@@ -1,0 +1,15 @@
+[Unit]
+Description=CloudCLI console
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workplace/console
+ExecStart=/home/linuxbrew/.linuxbrew/bin/node %h/workplace/console/dist-server/server/index.js
+Environment="PATH=/home/nganhpha/.codex/bin:/home/nganhpha/.aim/mcp-servers:/home/nganhpha/miniconda3/envs/python/bin:/home/nganhpha/miniconda3/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/nganhpha/.toolbox/bin:/home/nganhpha/.local/bin:/home/nganhpha/.cargo/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin"
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/workplace/console/.local/cloudcli/server-service.log
+StandardError=inherit
+
+[Install]
+WantedBy=default.target

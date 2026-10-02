@@ -51,7 +51,7 @@ function HeaderIconButton({ title, onClick, icon, active = false }: HeaderIconBu
       className={cn(
         'p-2 rounded-md min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center transition-colors',
         active
-          ? 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/50'
+          ? 'bg-primary/10 text-link'
           : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800',
       )}
     >
@@ -86,14 +86,14 @@ export default function PrdEditorHeader({
   return (
     <div className="flex min-w-0 flex-shrink-0 items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-purple-600">
-          <FileText className="h-4 w-4 text-white" />
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-primary text-primary-foreground">
+          <FileText className="h-4 w-4" />
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-1">
-              <div className="flex min-w-0 flex-1 items-center rounded-md border border-gray-200 bg-gray-50 px-3 py-2 focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500 dark:border-gray-600 dark:bg-gray-700 dark:focus-within:border-purple-400 dark:focus-within:ring-purple-400">
+              <div className="flex min-w-0 flex-1 items-center rounded-md border border-input bg-muted px-3 py-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-ring">
                 <input
                   ref={fileNameInputRef}
                   type="text"
@@ -110,7 +110,7 @@ export default function PrdEditorHeader({
 
               <button
                 onClick={() => fileNameInputRef.current?.focus()}
-                className="p-1 text-gray-400 transition-colors hover:text-purple-600 dark:hover:text-purple-400"
+                className="p-1 text-muted-foreground transition-colors hover:text-link"
                 title="Focus filename input"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,7 +125,7 @@ export default function PrdEditorHeader({
             </div>
 
             <div className="flex flex-shrink-0 items-center gap-2">
-              <span className="whitespace-nowrap rounded bg-purple-100 px-2 py-1 text-xs text-purple-600 dark:bg-purple-900 dark:text-purple-300">
+              <span className="whitespace-nowrap rounded bg-primary/10 px-2 py-1 text-xs text-link">
                 PRD
               </span>
               {isNewFile && (
@@ -179,8 +179,8 @@ export default function PrdEditorHeader({
           onClick={onOpenGenerateTasks}
           disabled={!canGenerateTasks}
           className={cn(
-            'px-3 py-2 rounded-md disabled:opacity-50 flex items-center gap-2 transition-colors text-sm font-medium text-white min-h-[44px] md:min-h-0',
-            'bg-purple-600 hover:bg-purple-700',
+            'px-3 py-2 rounded-md disabled:opacity-50 flex items-center gap-2 transition-colors text-sm font-medium text-primary-foreground min-h-[44px] md:min-h-0',
+            'bg-primary hover:bg-primary/90',
           )}
           title="Generate tasks from PRD content"
         >
@@ -192,8 +192,8 @@ export default function PrdEditorHeader({
           onClick={onSave}
           disabled={saving}
           className={cn(
-            'px-3 py-2 text-white rounded-md disabled:opacity-50 flex items-center gap-2 transition-colors min-h-[44px] md:min-h-0',
-            saveSuccess ? 'bg-green-600 hover:bg-green-700' : 'bg-purple-600 hover:bg-purple-700',
+            'px-3 py-2 rounded-md disabled:opacity-50 flex items-center gap-2 transition-colors min-h-[44px] md:min-h-0',
+            saveSuccess ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-primary text-primary-foreground hover:bg-primary/90',
           )}
         >
           {saveSuccess ? (

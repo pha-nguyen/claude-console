@@ -47,14 +47,11 @@ export function buildSyntaxTheme(light: PrismStyleSheet, dark: PrismStyleSheet):
       variableCount += 1;
       merged[property] = `var(${variableName})`;
 
-      // A theme that omits the property leaves the variable undefined, which
-      // makes the declaration invalid and drops it — the same result as the
-      // theme not setting it. Only the light theme omits properties in the pair
-      // this app ships, so the dark side is written unconditionally.
-      if (lightValue !== undefined) {
-        lightDeclarations.push(`${variableName}:${lightValue};`);
-      }
-      darkDeclarations.push(`${variableName}:${darkValue};`);
+      // `initial` makes a missing custom property invalid. Explicitly reset
+      // both sides: Monokai omits some One Light rules and must not inherit
+      // their colors from :root when .dark is applied to the document.
+      lightDeclarations.push(`${variableName}:${lightValue ?? 'initial'};`);
+      darkDeclarations.push(`${variableName}:${darkValue ?? 'initial'};`);
     }
 
     style[selector] = merged;

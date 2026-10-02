@@ -102,3 +102,12 @@ test('an explicit refresh still reaches the server after the mount fetch', async
 
   assert.equal(projectsResponse.mock.calls.length, 2);
 });
+
+test('the Terminal tab remains selected after reloading the workspace', async () => {
+  localStorage.setItem('activeTab', 'terminal');
+  const { result } = await renderProjectsState();
+
+  await waitFor(() => assert.equal(result.current.isLoadingProjects, false));
+  assert.equal(result.current.activeTab, 'terminal');
+  assert.equal(localStorage.getItem('activeTab'), 'terminal');
+});

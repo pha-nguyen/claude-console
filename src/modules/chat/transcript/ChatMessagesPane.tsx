@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { memo, useCallback, useMemo } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { ClipboardEvent, Dispatch, RefObject, SetStateAction } from 'react';
 
 import type { BackgroundTaskSummary,
   ChatMessage,
@@ -185,9 +185,25 @@ function ChatMessagesPane({
     [messageKeyMap],
   );
 
+  const handleCopy = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || (event.target instanceof Element
+      && event.target.closest('input, textarea, [contenteditable]'))) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed
+      || !event.currentTarget.contains(selection.anchorNode)
+      || !event.currentTarget.contains(selection.focusNode)) return;
+
+    // Rich clipboard HTML carries layout wrappers and spacing into paste targets.
+    // Keep the selected text verbatim, including intentional blank lines in code.
+    event.clipboardData.setData('text/plain', selection.toString());
+    event.preventDefault();
+  };
+
   return (
     <div
       ref={scrollContainerRef}
+      onCopy={handleCopy}
       onWheel={onWheel}
       onTouchMove={onTouchMove}
       className={`chat-messages-pane relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-3 sm:pt-4 ${
@@ -280,12 +296,12 @@ function ChatMessagesPane({
           {!hasMoreMessages && chatMessages.length > visibleMessageCount && (
             <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
               {t('session.messages.showingLast', { count: visibleMessageCount, total: chatMessages.length })} |
-              <button className="ml-1 text-blue-600 underline hover:text-blue-700" onClick={loadEarlierMessages}>
+              <button className="ml-1 text-link underline hover:text-link/80" onClick={loadEarlierMessages}>
                 {t('session.messages.loadEarlier')}
               </button>
               {' | '}
               <button
-                className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                className="text-link underline hover:text-link/80"
                 onClick={loadAllMessages}
               >
                 {t('session.messages.loadAll')}
