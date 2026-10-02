@@ -1,4 +1,5 @@
 import { memo, useMemo, useRef } from 'react';
+import type { MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GitBranchIcon, PencilIcon } from 'lucide-react';
 
@@ -42,6 +43,21 @@ type MessageComponentProps = {
 };
 
 const COPY_HIDDEN_TOOL_NAMES = new Set(['Bash', 'Edit', 'Write', 'ApplyPatch']);
+
+function handleUserMessageClick(event: MouseEvent<HTMLDivElement>) {
+  if (event.detail < 3 || event.defaultPrevented) return;
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount !== 1) return;
+
+  const content = event.currentTarget;
+  const range = selection.getRangeAt(0);
+  // Chrome can extend a triple-click selection to the footer's first control,
+  // which adds layout-only newlines when copied. Keep its end inside the text.
+  if (content.contains(range.startContainer) && !content.contains(range.endContainer)) {
+    range.setEnd(content, content.childNodes.length);
+  }
+}
 
 /**
  * Rendered by chat's ChatMessagesPane and ToolGroupContainer to draw one
@@ -112,7 +128,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
             )}
             {userCopyContent.trim().length > 0 || (!message.images?.length && !message.files?.length) ? (
               <div className="group max-w-full rounded-2xl rounded-br-md border border-border/60 bg-muted/60 px-3 py-2 text-foreground shadow-sm dark:bg-gray-800/60 sm:px-4">
-                <div dir="auto" className="break-words font-serif text-sm">
+                <div dir="auto" onClick={handleUserMessageClick} className="break-words font-serif text-sm">
                   <Markdown
                     breaks
                     className="prose prose-sm max-w-none font-serif dark:prose-invert"
